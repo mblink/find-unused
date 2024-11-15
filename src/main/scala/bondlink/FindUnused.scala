@@ -1,11 +1,9 @@
 package bondlink
 
-// import cats.Eval
 import cats.Monoid
 import cats.syntax.all.*
 import java.net.URI
 import java.nio.file.FileSystems
-// import scala.util.Try
 import tastyquery.*
 import tastyquery.Symbols.*
 import tastyquery.Trees.*
@@ -48,8 +46,6 @@ object FindUnusedGivens {
     os.Path("/Users/matt/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/typelevel/cats-kernel_3/2.12.0/cats-kernel_3-2.12.0.jar"),
   ) // ++ os.walk(os.root / "example" / "proj" / "target" / "docker" / "stage").filter(_.ext == "jar")
 
-  // val jars = os.Path("/Users/matt/tasty-query-unused/target/scala-3.5.2/tasty-query-unused_3-0.1.0-SNAPSHOT.jar") +:
-  //   os.walk(os.root / "example" / "proj" / "target" / "docker" / "stage").filter(_.ext == "jar")
   val paths = FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules", "java.base") :: jars.map(_.toNIO).toList
   val cp = ClasspathLoaders.read(paths)
   given ctx: Contexts.Context = Contexts.Context.initialize(cp)
@@ -170,95 +166,3 @@ object FindUnusedGivens {
       case _: (ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => Givens.empty
     }
 }
-/*
-object FindUnused {
-  val jars = os.Path("/Users/matt/tasty-query-unused/target/scala-3.4.3/tasty-query-unused_3-0.1.0-SNAPSHOT.jar") +:
-    os.walk(os.root / "example" / "proj" / "target" / "docker" / "stage").filter(_.ext == "jar")
-  val paths = FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules", "java.base") :: jars.map(_.toNIO).toList
-  val cp = ClasspathLoaders.read(paths)
-  given ctx: Contexts.Context = Contexts.Context.initialize(cp)
-
-  val emptySet = Eval.now(Set.empty[Symbol])
-
-  def typeBoundsSyms(bounds: TypeBounds): Eval[Set[Symbol]] =
-    termTypeSyms(bounds.low) |+| termTypeSyms(bounds.high)
-
-  def typeOrWildcardSyms(tpe: TypeOrWildcard): Eval[Set[Symbol]] =
-    tpe match {
-      case t: Type => termTypeSyms(t)
-      case w: WildcardTypeArg => typeBoundsSyms(w.bounds)
-    }
-
-  def matchTypeCaseSyms(cse: MatchTypeCase): Eval[Set[Symbol]] =
-    termTypeSyms(cse.pattern) |+| termTypeSyms(cse.result) |+| cse.paramTypeBounds.foldMap(typeBoundsSyms)
-
-  def termTypeSyms(tpe: TermType): Eval[Set[Symbol]] =
-    tpe match {
-      case t: AndType => termTypeSyms(t.first) |+| termTypeSyms(t.second)
-      case _: AnyKindType => emptySet
-      case t: AppliedType => termTypeSyms(t.tycon) |+| t.args.foldMap(typeOrWildcardSyms)
-      case t: AnnotatedType => termTypeSyms(t.typ).map(_ + t.annotation.symbol)
-      case t: ByNameType => termTypeSyms(t.resultType)
-      case _: ConstantType => emptySet
-      case _: CustomTransientGroundType => emptySet
-      case t: MatchType => termTypeSyms(t.bound) |+| termTypeSyms(t.scrutinee) |+| t.cases.foldMap(matchTypeCaseSyms)
-      case t: MethodType => t.paramTypes.foldMap(termTypeSyms) |+| termTypeSyms(t.resultType)
-      case _: NothingType => emptySet
-      case t: OrType => termTypeSyms(t.first) |+| termTypeSyms(t.second)
-      case t: PackageRef => Eval.now(Set(t.symbol))
-      case t: PolyType => termTypeSyms(t.resultType) |+| t.paramTypeBounds.foldMap(typeBoundsSyms)
-      case t: RecThis => termTypeSyms(t.binder)
-      case t: RecType => termTypeSyms(t.parent)
-      case t: RepeatedType => termTypeSyms(t.elemType)
-      case t: SkolemType => termTypeSyms(t.tpe)
-      case t: SuperType => termTypeSyms(t.underlying)
-      case t: TermParamRef => termTypeSyms(t.underlying)
-      case t: TermRef => termTypeSyms(t.underlying)
-      case t: TermRefinement => termTypeSyms(t.parent) |+| termTypeSyms(t.refinedType)
-      case t: ThisType => termTypeSyms(t.underlying)
-      case t: TypeLambda => termTypeSyms(t.resultType) |+| t.paramTypeBounds.foldMap(typeBoundsSyms)
-      case t: TypeParamRef => typeBoundsSyms(t.bounds)
-      case t: TypeRef => t.optSymbol.fold(emptySet)(s => Eval.now(Set(s))) |+| Try(typeBoundsSyms(t.bounds)).getOrElse(emptySet)
-      case t: TypeRefinement => termTypeSyms(t.parent) |+| typeBoundsSyms(t.refinedBounds)
-    }
-
-  @annotation.nowarn("msg=exhaustive")
-  def treeReferencedSyms(tree: Tree): Eval[Set[Symbol]] =
-    tree match {
-      case PackageDef(pid, stats) => stats.foldMap(treeReferencedSyms).map(_ + pid)
-      case ImportIdent(_) => emptySet
-      case ImportSelector(_, _, _) => emptySet
-      case Import(_, _) => emptySet
-      case Export(_, _) => emptySet
-      case ClassDef(_, tpl, _) => treeReferencedSyms(tpl)
-      case TypeMember(_, rhs, _) => treeReferencedSyms(rhs)
-      case TypeParam(_, bounds, _) => treeReferencedSyms(bounds)
-      case Template(constr, parents, self, body) =>
-        treeReferencedSyms(constr) |+|
-          parents.foldMap(treeReferencedSyms) |+|
-          self.fold(emptySet)(treeReferencedSyms) |+|
-          body.foldMap(treeReferencedSyms)
-      case ValDef(_, tpt, rhs, _) => treeReferencedSyms(tpt) |+| rhs.fold(emptySet)(treeReferencedSyms)
-      case SelfDef(_, tpt) => treeReferencedSyms(tpt)
-      case DefDef(_, paramLists, resultTpt, rhs, _) =>
-        paramLists.foldMap(_.fold(identity, identity).foldMap(treeReferencedSyms)) |+|
-          treeReferencedSyms(resultTpt) |+|
-          rhs.fold(emptySet)(treeReferencedSyms)
-      case i @ Ident(_) => termTypeSyms(i.tpe)
-      // case Select(qualifier, _) =>
-      //   qualifier.tpe
-    }
-
-  def symReferencedSyms(sym: Symbol): Eval[Set[Symbol]] =
-    sym.tree.fold(emptySet)(treeReferencedSyms)
-
-  // def findUnusedMethods(sym: Symbol): List[Symbol] =
-  //   sym match {
-  //     case p: PackageSymbol => p.declarations.flatMap(findUnusedMethods)
-  //     case t: TermSymbol => t.tree.fold(Nil)()
-  //   }
-
-  def main(args: Array[String]): Unit =
-    ()
-}
-*/
