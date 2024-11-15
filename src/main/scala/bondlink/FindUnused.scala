@@ -93,10 +93,10 @@ object FindUnusedGivens {
       case Export(expr, selectors) => treeGivens(expr) |+| treeGivensL(selectors)
       case ExprPattern(expr) => treeGivens(expr)
       case i @ Ident(_) =>
-        i.symbol match {
+        Either.catchNonFatal(i.symbol match {
           case t: TermSymbol => Givens.fromTermSymbol(t, Givens.used)
           case _: PackageSymbol => Givens.empty
-        }
+        }).getOrElse(Givens.empty)
       case If(cond, thenPart, elsePart) => treeGivens(cond) |+| treeGivens(thenPart) |+| treeGivens(elsePart)
       case Import(expr, selectors) => treeGivens(expr) |+| treeGivensL(selectors)
       case ImportIdent(_) => Givens.empty
