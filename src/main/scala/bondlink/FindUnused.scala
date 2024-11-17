@@ -4,7 +4,7 @@ import cats.Monoid
 import cats.syntax.all.*
 import java.net.URI
 import java.nio.file.FileSystems
-import tastyquery.*
+import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
 import tastyquery.Trees.*
 import tastyquery.Types.*
@@ -48,7 +48,7 @@ object FindUnusedGivens {
 
   val paths = FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules", "java.base") :: jars.map(_.toNIO).toList
   val cp = ClasspathLoaders.read(paths)
-  given ctx: Contexts.Context = Contexts.Context.initialize(cp)
+  given ctx: Context = Context.initialize(cp)
 
   case class Givens(
     defined: Map[Int, String],
