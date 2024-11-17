@@ -52,17 +52,17 @@ object FindUnusedGivens {
 
   case class Givens(
     defined: Map[Int, String],
-    used: Map[Int, String],
+    used: Set[Int],
   )
 
   object Givens {
     given monoid: Monoid[Givens] =
-      Monoid.instance(Givens(Map.empty, Map.empty), (x, y) => Givens(x.defined ++ y.defined, x.used ++ y.used))
+      Monoid.instance(Givens(Map.empty, Set.empty), (x, y) => Givens(x.defined ++ y.defined, x.used ++ y.used))
 
     lazy val empty: Givens = monoid.empty
 
-    def defined(sym: Symbol): Givens = Givens(Map(sym.hashCode -> sym.displayFullName), Map.empty)
-    def used(sym: Symbol): Givens = Givens(Map.empty, Map(sym.hashCode -> sym.displayFullName))
+    def defined(sym: Symbol): Givens = Givens(Map(sym.hashCode -> sym.displayFullName), Set.empty)
+    def used(sym: Symbol): Givens = Givens(Map.empty, Set(sym.hashCode))
 
     def fromTermSymbol(sym: TermSymbol, mk: Symbol => Givens): Givens =
       if (sym.isGivenOrUsing || sym.isImplicit) mk(sym) else Givens.empty
