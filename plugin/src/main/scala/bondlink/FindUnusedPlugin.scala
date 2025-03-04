@@ -54,7 +54,7 @@ object FindUnusedPlugin extends AutoPlugin {
   )
 
   private lazy val findUnusedCliDownloadTask = Def.task {
-    val dep = Dependency(Module(Organization("bondlink"), ModuleName("tasty-query-unused-cli_3"), Map.empty), BuildInfo.version)
+    val dep = Dependency(Module(Organization("bondlink"), ModuleName("find-unused-cli_3"), Map.empty), BuildInfo.version)
     val repos = Seq(MavenRepository("https://raw.githubusercontent.com/mblink/maven-repo/main"))
     Fetch().withRepositories(repos).addDependencies(dep).run()
   }

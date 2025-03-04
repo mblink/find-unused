@@ -31,7 +31,7 @@ lazy val commonSettings = Seq(
 lazy val core = project.in(file("core"))
   .settings(commonSettings)
   .settings(
-    name := "tasty-query-unused-core",
+    name := "find-unused-core",
     libraryDependencies ++= (
       if (tastyQueryDev) Seq()
       else scalaVersion.value match {
@@ -51,7 +51,7 @@ lazy val core = project.in(file("core"))
 lazy val cli = project.in(file("cli"))
   .settings(commonSettings)
   .settings(
-    name := "tasty-query-unused-cli",
+    name := "find-unused-cli",
     libraryDependencies ++= Seq(
       "com.lihaoyi" %% "mainargs" % "0.7.6",
     ),
@@ -66,7 +66,7 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 lazy val plugin = project.in(file("plugin"))
   .settings(commonSettings)
   .settings(
-    name := "tasty-query-unused-plugin",
+    name := "find-unused-plugin",
     scalaVersion := scala2,
     crossScalaVersions := Seq(scala2/*, scala36*/),
     pluginCrossBuild / sbtVersion := {
