@@ -121,8 +121,7 @@ jobs:
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3'
         shell: bash
         run: |
-          mkdir -p cli/artifacts
-          ls -l cli/target/graalvm-native-image/
+          mkdir -p cli/artifacts/
           cp ${{ matrix.cli_input_path }} ${{ matrix.cli_output_path }}
 
       - name: Attest CLI
@@ -139,3 +138,46 @@ jobs:
           path: cli/artifacts/
           if-no-files-found: error
           retention-days: 2
+
+  release:
+    name: Release
+    needs: [build]
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        scala: [3.6.3]
+        java: [graal_graalvm@21]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout current branch (full)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: find-unused-linux
+          path: cli/artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: find-unused-linux-arm
+          path: cli/artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: find-unused-mac
+          path: cli/artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: find-unused-mac-arm
+          path: cli/artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: find-unused-windows.exe
+          path: cli/artifacts/
+
+      - name: List artifacts
+        run: ls -l cli/artifacts/

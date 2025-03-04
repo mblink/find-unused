@@ -21,10 +21,10 @@ val githubOSes = List(
   "windows-latest" -> "windows",
 )
 
-val cliArtifacts = "cli/artifacts"
+val cliArtifacts = "cli/artifacts/"
 def cliExt(osShort: String): String = if (osShort == "windows") ".exe" else ""
 def cliName(osShort: String): String = "find-unused-" ++ osShort ++ cliExt(osShort)
-def cliPath(osShort: String): String = s"$cliArtifacts/${cliName(osShort)}"
+def cliPath(osShort: String): String = cliArtifacts ++ cliName(osShort)
 
 ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
   PermissionScope.IdToken -> PermissionValue.Write,
@@ -58,7 +58,6 @@ ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Run(
     List(
       s"mkdir -p $cliArtifacts",
-      "ls -l cli/target/graalvm-native-image/",
       "cp ${{ matrix.cli_input_path }} ${{ matrix.cli_output_path }}",
     ),
     name = Some("Copy CLI"),
@@ -76,11 +75,43 @@ ThisBuild / githubWorkflowBuild := Seq(
     cond = Some(java21AndScala36),
     params = Map(
       "name" -> "${{ matrix.cli_output_name }}",
-      "path" -> "cli/artifacts/",
+      "path" -> cliArtifacts,
       "if-no-files-found" -> "error",
       "retention-days" -> "2",
     )
   ),
+)
+
+ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
+  id = "release",
+  name = "Release",
+  oses = List(ubuntuLatest),
+  javas = List(java21),
+  scalas = List(scala36),
+  // cond = Some("startsWith(github.ref, 'refs/tags/v')"),
+  needs = List("build"),
+  steps = List(WorkflowStep.CheckoutFull) ++
+    githubOSes.map { case (_, short) =>
+      WorkflowStep.Use(
+        ref = UseRef.Public("actions", "download-artifact", "v4"),
+        params = Map(
+          "name" -> cliName(short),
+          "path" -> cliArtifacts,
+        )
+      )
+    } ++
+    List(
+      WorkflowStep.Run(List(s"ls -l $cliArtifacts"), name = Some("List artifacts")),
+      // WorkflowStep.Use(
+      //   ref = UseRef.Public("softprops", "action-gh-release", "v2"),
+      //   name = Some("Create Release"),
+      //   params = Map(
+      //     "draft" -> "true",
+      //     "files" -> githubOSes.map { case (_, short) => cliPath(short) }.mkString("\n"),
+      //     "fail_on_unmatched_files" -> "true",
+      //   ),
+      // )
+    )
 )
 
 lazy val commonSettings = Seq(
