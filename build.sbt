@@ -62,7 +62,7 @@ ThisBuild / githubWorkflowBuild := Seq(
     params = Map(
       "name" -> s"find-unused-$short",
       "path" -> "cli/artifacts/",
-      "if-no-file-found" -> "error",
+      "if-no-files-found" -> "error",
       "retention-days" -> "2",
     )
   )

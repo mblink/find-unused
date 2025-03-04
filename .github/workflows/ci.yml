@@ -143,7 +143,7 @@ jobs:
         with:
           name: find-unused-linux
           path: cli/artifacts/
-          if-no-file-found: error
+          if-no-files-found: error
           retention-days: 2
 
       - name: Upload CLI (ubuntu-24.04-arm)
@@ -152,7 +152,7 @@ jobs:
         with:
           name: find-unused-linux-arm
           path: cli/artifacts/
-          if-no-file-found: error
+          if-no-files-found: error
           retention-days: 2
 
       - name: Upload CLI (macos-13)
@@ -161,7 +161,7 @@ jobs:
         with:
           name: find-unused-mac
           path: cli/artifacts/
-          if-no-file-found: error
+          if-no-files-found: error
           retention-days: 2
 
       - name: Upload CLI (macos-latest)
@@ -170,7 +170,7 @@ jobs:
         with:
           name: find-unused-mac-arm
           path: cli/artifacts/
-          if-no-file-found: error
+          if-no-files-found: error
           retention-days: 2
 
       - name: Upload CLI (windows-latest)
@@ -179,5 +179,5 @@ jobs:
         with:
           name: find-unused-windows
           path: cli/artifacts/
-          if-no-file-found: error
+          if-no-files-found: error
           retention-days: 2
