@@ -4,7 +4,7 @@ import cats.{Id, Monoid}
 import cats.data.{Kleisli, Reader}
 import cats.syntax.all.*
 import java.net.URI
-import java.nio.file.FileSystems
+import java.nio.file.{FileSystems, Path}
 import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
 import tastyquery.Trees.*
@@ -12,20 +12,12 @@ import tastyquery.Types.*
 import tastyquery.jdk.ClasspathLoaders
 
 object FindUnusedGivens {
-  val jars = os.walk(os.root / "example" / "proj" / "target" / "docker" / "stage").filter(_.ext == "jar")
+  def all(pkgs: Seq[String], classpath: Seq[Path]): Givens = {
+    given ctx: Context = Context.initialize(ClasspathLoaders.read(
+      FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules", "java.base") :: classpath.toList
+    ))
 
-  val paths = FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules", "java.base") :: jars.map(_.toNIO).toList
-  val cp = ClasspathLoaders.read(paths)
-  given ctx: Context = Context.initialize(cp)
-
-  private val pkgs = List("bl", "ixk", "common", "admin")
-
-  def allGivens: Givens = pkgs.foldMap(p => symGivens(ctx.findPackage(p))).run(Env(false, Set()))
-
-  def main(args: Array[String]): Unit = {
-    val g = allGivens
-    val unused = g.defined.filterNot(t => g.used.contains(t._1))
-    println(unused.toList.sortBy(_._2).mkString("\n"))
+    pkgs.foldMap(p => symGivens(ctx.findPackage(p))).run(Env(false, Set.empty))
   }
 
   case class Env(log: Boolean, seenSymbols: Set[Int])
@@ -48,7 +40,7 @@ object FindUnusedGivens {
         case None => sym.displayFullName
       }
 
-    def defined(sym: TermSymbol): Givens =
+    def defined(sym: TermSymbol)(using ctx: Context): Givens =
       Givens(
         defined = Map(sym.hashCode -> symName(sym)),
         // If a symbol overrides another, consider it used
@@ -74,11 +66,11 @@ object FindUnusedGivens {
 
   private lazy val empty: Res = Givens.empty.pure[ResF]
 
-  private def treeGivensO(tree: Option[Tree]): Res = tree.fold(empty)(treeGivens)
+  private def treeGivensO(tree: Option[Tree])(using ctx: Context): Res = tree.fold(empty)(treeGivens)
 
-  private def treeGivensL(trees: List[Tree]): Res = trees.foldMap(treeGivens)
+  private def treeGivensL(trees: List[Tree])(using ctx: Context): Res = trees.foldMap(treeGivens)
 
-  def treeGivens(tree: Tree): Res =
+  def treeGivens(tree: Tree)(using ctx: Context): Res =
     Kleisli.ask[Id, Env].flatMap { env =>
       if (env.log) println(s"************* tree: ${pprint(tree.toString)}")
       tree match {
@@ -163,7 +155,7 @@ object FindUnusedGivens {
       }
     }
 
-  def symGivens(sym: Symbol): Res =
+  def symGivens(sym: Symbol)(using ctx: Context): Res =
     Reader { env =>
       if (env.seenSymbols.contains(sym.hashCode)) empty.run(env)
       else {
