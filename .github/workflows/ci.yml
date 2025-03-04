@@ -34,6 +34,22 @@ jobs:
           - windows-latest
         scala: [2.12.20, 3.6.3]
         java: [temurin@11, temurin@17, graal_graalvm@21]
+        include:
+          - os: ubuntu-latest
+            cli_name: find-unused-linux
+            cli_path: cli/artifacts/find-unused-linux
+          - os: ubuntu-24.04-arm
+            cli_name: find-unused-linux-arm
+            cli_path: cli/artifacts/find-unused-linux-arm
+          - os: macos-13
+            cli_name: find-unused-mac
+            cli_path: cli/artifacts/find-unused-mac
+          - os: macos-latest
+            cli_name: find-unused-mac-arm
+            cli_path: cli/artifacts/find-unused-mac-arm
+          - os: windows-latest
+            cli_name: find-unused-windows
+            cli_path: cli/artifacts/find-unused-windows
     runs-on: ${{ matrix.os }}
     steps:
       - name: Ignore line ending differences in git
@@ -96,88 +112,24 @@ jobs:
         shell: bash
         run: sbt '++ ${{ matrix.scala }}' cli/GraalVMNativeImage/packageBin
 
-      - name: Copy CLI (ubuntu-latest)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'ubuntu-latest'
+      - name: Copy CLI
+        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3'
         shell: bash
         run: |
           mkdir -p cli/artifacts
-          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-linux
-
-      - name: Copy CLI (ubuntu-24.04-arm)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'ubuntu-24.04-arm'
-        shell: bash
-        run: |
-          mkdir -p cli/artifacts
-          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-linux-arm
-
-      - name: Copy CLI (macos-13)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'macos-13'
-        shell: bash
-        run: |
-          mkdir -p cli/artifacts
-          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-mac
-
-      - name: Copy CLI (macos-latest)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'macos-latest'
-        shell: bash
-        run: |
-          mkdir -p cli/artifacts
-          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-mac-arm
-
-      - name: Copy CLI (windows-latest)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          mkdir -p cli/artifacts
-          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-windows
+          cp cli/target/graalvm-native-image/find-unused-cli ${{ matrix.cli_path }}
 
       - name: Attest CLI
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: cli/artifacts/*
+          subject-path: cli/artifacts/${{ matrix.cli_name }}
 
-      - name: Upload CLI (ubuntu-latest)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'ubuntu-latest'
+      - name: Upload CLI
+        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3'
         uses: actions/upload-artifact@v4
         with:
-          name: find-unused-linux
-          path: cli/artifacts/
-          if-no-files-found: error
-          retention-days: 2
-
-      - name: Upload CLI (ubuntu-24.04-arm)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'ubuntu-24.04-arm'
-        uses: actions/upload-artifact@v4
-        with:
-          name: find-unused-linux-arm
-          path: cli/artifacts/
-          if-no-files-found: error
-          retention-days: 2
-
-      - name: Upload CLI (macos-13)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'macos-13'
-        uses: actions/upload-artifact@v4
-        with:
-          name: find-unused-mac
-          path: cli/artifacts/
-          if-no-files-found: error
-          retention-days: 2
-
-      - name: Upload CLI (macos-latest)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: find-unused-mac-arm
-          path: cli/artifacts/
-          if-no-files-found: error
-          retention-days: 2
-
-      - name: Upload CLI (windows-latest)
-        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: find-unused-windows
+          name: ${{ matrix.cli_name }}
           path: cli/artifacts/
           if-no-files-found: error
           retention-days: 2

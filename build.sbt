@@ -21,6 +21,17 @@ val githubOSes = List(
   "windows-latest" -> "windows",
 )
 
+val cliArtifacts = "cli/artifacts"
+def cliName(osShort: String): String = s"find-unused-$osShort"
+def cliPath(osShort: String): String = s"$cliArtifacts/${cliName(osShort)}"
+
+ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
+  PermissionScope.IdToken -> PermissionValue.Write,
+  PermissionScope.Attestations -> PermissionValue.Write,
+)))
+ThisBuild / githubWorkflowBuildMatrixInclusions := githubOSes.map { case (long, short) =>
+  MatrixInclude(Map("os" -> long), Map("cli_name" -> cliName(short), "cli_path" -> cliPath(short)))
+}
 ThisBuild / githubWorkflowOSes := githubOSes.map(_._1)
 ThisBuild / githubWorkflowJavaVersions := javaVersions
 ThisBuild / githubWorkflowArtifactUpload := false
@@ -28,7 +39,6 @@ ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
 ThisBuild / githubWorkflowTargetBranches := Seq("main")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
-def isOS(os: String) = s"matrix.os == '$os'"
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
 
@@ -37,36 +47,32 @@ val java21AndScala36 = isJava(21) ++ " && " ++ isScala(scala36)
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
   WorkflowStep.Sbt(List("cli/GraalVMNativeImage/packageBin"), name = Some("Build CLI"), cond = Some(java21AndScala36)),
-) ++ githubOSes.map { case (long, short) =>
-  val artifacts = "cli/artifacts"
   WorkflowStep.Run(
     List(
-      s"mkdir -p $artifacts",
-      s"cp cli/target/graalvm-native-image/find-unused-cli $artifacts/find-unused-$short",
+      s"mkdir -p $cliArtifacts",
+      "cp cli/target/graalvm-native-image/find-unused-cli ${{ matrix.cli_path }}",
     ),
-    name = Some(s"Copy CLI ($long)"),
-    cond = Some(java21AndScala36 ++ " && " ++ isOS(long)),
-  )
-} ++ Seq(
+    name = Some("Copy CLI"),
+    cond = Some(java21AndScala36),
+  ),
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
     name = Some("Attest CLI"),
     cond = Some(java21AndScala36),
-    params = Map("subject-path" -> "cli/artifacts/*"),
+    params = Map("subject-path" -> "cli/artifacts/${{ matrix.cli_name }}"),
   ),
-) ++ githubOSes.map { case (long, short) =>
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "upload-artifact", "v4"),
-    name = Some(s"Upload CLI ($long)"),
-    cond = Some(java21AndScala36 ++ " && " ++ isOS(long)),
+    name = Some("Upload CLI"),
+    cond = Some(java21AndScala36),
     params = Map(
-      "name" -> s"find-unused-$short",
+      "name" -> "${{ matrix.cli_name }}",
       "path" -> "cli/artifacts/",
       "if-no-files-found" -> "error",
       "retention-days" -> "2",
     )
-  )
-}
+  ),
+)
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
