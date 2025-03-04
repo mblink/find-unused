@@ -53,8 +53,6 @@ lazy val core = project.in(file("core"))
       "com.lihaoyi" %% "pprint" % "0.9.0",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
-    run / fork := true,
-    run / javaOptions += "-Xmx8G"
   )
   .dependsOn((if (tastyQueryDev) Seq[ClasspathDep[ProjectReference]](tastyQuery) else Seq())*)
   .aggregate((if (tastyQueryDev) Seq(tastyQuery) else Seq())*)
