@@ -26,6 +26,7 @@ lazy val commonSettings = Seq(
   organization := "bondlink",
   scalaVersion := scala36,
   crossScalaVersions := Seq(/*scala33,*/ scala36),
+  licenses += License.Apache2,
 )
 
 lazy val core = project.in(file("core"))
