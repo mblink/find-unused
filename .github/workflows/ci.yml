@@ -95,29 +95,40 @@ jobs:
       - name: Copy CLI (ubuntu-latest)
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'ubuntu-latest'
         shell: bash
-        run: cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-linux
+        run: |
+          mkdir -p cli/artifacts
+          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-linux
 
       - name: Copy CLI (ubuntu-24.04-arm)
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'ubuntu-24.04-arm'
         shell: bash
-        run: cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-linux-arm
+        run: |
+          mkdir -p cli/artifacts
+          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-linux-arm
 
       - name: Copy CLI (macos-13)
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'macos-13'
         shell: bash
-        run: cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-mac
+        run: |
+          mkdir -p cli/artifacts
+          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-mac
 
       - name: Copy CLI (macos-latest)
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'macos-latest'
         shell: bash
-        run: cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-mac-arm
+        run: |
+          mkdir -p cli/artifacts
+          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-mac-arm
 
       - name: Copy CLI (windows-latest)
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3' && matrix.os == 'windows-latest'
         shell: bash
-        run: cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-windows
+        run: |
+          mkdir -p cli/artifacts
+          cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-windows
 
       - name: Attest CLI
+        if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: cli/artifacts/*

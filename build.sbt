@@ -38,8 +38,12 @@ ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
   WorkflowStep.Sbt(List("cli/GraalVMNativeImage/packageBin"), name = Some("Build CLI"), cond = Some(java21AndScala36)),
 ) ++ githubOSes.map { case (long, short) =>
+  val artifacts = "cli/artifacts"
   WorkflowStep.Run(
-    List(s"cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-$short"),
+    List(
+      s"mkdir -p $artifacts",
+      s"cp cli/target/graalvm-native-image/find-unused-cli $artifacts/find-unused-$short",
+    ),
     name = Some(s"Copy CLI ($long)"),
     cond = Some(java21AndScala36 ++ " && " ++ isOS(long)),
   )
@@ -47,6 +51,7 @@ ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
     name = Some("Attest CLI"),
+    cond = Some(java21AndScala36),
     params = Map("subject-path" -> "cli/artifacts/*"),
   ),
 ) ++ githubOSes.map { case (long, short) =>
