@@ -11,6 +11,8 @@ import sbt.plugins.JvmPlugin
 
 object FindUnusedPlugin extends AutoPlugin {
   object autoImport {
+    val findUnused = settingKey[Unit]("Find unused")
+
     val findUnusedCliDownload = taskKey[Seq[File]]("Find unused CLI download")
 
     val findUnusedCliClasspath = taskKey[Seq[File]]("Find unused CLI classpath")
@@ -43,6 +45,7 @@ object FindUnusedPlugin extends AutoPlugin {
   )
 
   override lazy val globalSettings: Seq[Setting[?]] = Def.settings(
+    findUnused / javaOptions := Seq.empty,
     findUnusedCliDownload := findUnusedCliDownloadTask.value,
     findUnusedCliClasspath := findUnusedCliClasspathTask.value,
     findUnusedCommandOptions := findUnusedCommandOptionsTask.value,
@@ -115,6 +118,7 @@ object FindUnusedPlugin extends AutoPlugin {
       .withJavaHome(javaHome.value)
       .withOutputStrategy(outputStrategy.value)
       .withConnectInput(false)
+      .withRunJVMOptions((findUnused / javaOptions).value.toVector)
 
     val cliClasspath = findUnusedCliClasspath.value
     val mainClass = "bondlink.FindUnusedCli"
