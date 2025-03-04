@@ -5,7 +5,6 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.20"
-lazy val scala33 = "3.3.5"
 lazy val scala36 = "3.6.3"
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala36)
@@ -25,7 +24,7 @@ ThisBuild / githubWorkflowBuild := Seq(
 lazy val commonSettings = Seq(
   organization := "bondlink",
   scalaVersion := scala36,
-  crossScalaVersions := Seq(/*scala33,*/ scala36),
+  crossScalaVersions := Seq(scala36),
   licenses += License.Apache2,
   publish / skip := true,
 )
@@ -45,10 +44,7 @@ lazy val core = project.in(file("core"))
     name := "find-unused-core",
     libraryDependencies ++= (
       if (tastyQueryDev) Seq()
-      else scalaVersion.value match {
-        case `scala33` => Seq("ch.epfl.scala" %% "tasty-query" % "1.2.1")
-        case `scala36` => Seq("ch.epfl.scala" %% "tasty-query" % "1.5.0")
-      }
+      else Seq("ch.epfl.scala" %% "tasty-query" % "1.5.0")
     ) ++ Seq(
       "com.lihaoyi" %% "pprint" % "0.9.0",
       "org.typelevel" %% "cats-core" % "2.13.0",
