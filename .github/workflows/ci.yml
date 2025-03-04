@@ -26,27 +26,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - ubuntu-24.04-arm
-          - macos-13
-          - macos-latest
-          - windows-latest
+        os: [windows-latest]
         scala: [2.12.20, 3.6.3]
-        java: [temurin@11, temurin@17, graal_graalvm@21]
+        java: [graal_graalvm@21]
         include:
-          - os: ubuntu-latest
-            cli_name: find-unused-linux
-            cli_path: cli/artifacts/find-unused-linux
-          - os: ubuntu-24.04-arm
-            cli_name: find-unused-linux-arm
-            cli_path: cli/artifacts/find-unused-linux-arm
-          - os: macos-13
-            cli_name: find-unused-mac
-            cli_path: cli/artifacts/find-unused-mac
-          - os: macos-latest
-            cli_name: find-unused-mac-arm
-            cli_path: cli/artifacts/find-unused-mac-arm
           - os: windows-latest
             cli_name: find-unused-windows
             cli_path: cli/artifacts/find-unused-windows
@@ -69,22 +52,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Setup Java (temurin@11)
-        if: matrix.java == 'temurin@11'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 11
-          cache: sbt
-
-      - name: Setup Java (temurin@17)
-        if: matrix.java == 'temurin@17'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-          cache: sbt
 
       - name: Setup GraalVM (graal_graalvm@21)
         if: matrix.java == 'graal_graalvm@21'
@@ -117,6 +84,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p cli/artifacts
+          ls -l cli/target/graalvm-native-image/
           cp cli/target/graalvm-native-image/find-unused-cli ${{ matrix.cli_path }}
 
       - name: Attest CLI

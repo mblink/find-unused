@@ -10,14 +10,14 @@ lazy val scala36 = "3.6.3"
 ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 
 val java21 = JavaSpec.graalvm(Graalvm.Distribution("graalvm"), "21")
-val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
+val javaVersions = Seq(/*JavaSpec.temurin("11"), JavaSpec.temurin("17"),*/ java21)
 
 val ubuntuLatest = "ubuntu-latest"
 val githubOSes = List(
-  ubuntuLatest -> "linux",
-  "ubuntu-24.04-arm" -> "linux-arm",
-  "macos-13" -> "mac",
-  "macos-latest" -> "mac-arm",
+  // ubuntuLatest -> "linux",
+  // "ubuntu-24.04-arm" -> "linux-arm",
+  // "macos-13" -> "mac",
+  // "macos-latest" -> "mac-arm",
   "windows-latest" -> "windows",
 )
 
@@ -50,6 +50,7 @@ ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Run(
     List(
       s"mkdir -p $cliArtifacts",
+      "ls -l cli/target/graalvm-native-image/",
       "cp cli/target/graalvm-native-image/find-unused-cli ${{ matrix.cli_path }}",
     ),
     name = Some("Copy CLI"),
