@@ -8,6 +8,20 @@ lazy val scala2 = "2.12.20"
 lazy val scala33 = "3.3.5"
 lazy val scala36 = "3.6.3"
 
+ThisBuild / crossScalaVersions := Seq(scala2, scala36)
+
+val javaVersions = Seq(11, 17, 21).map(v => JavaSpec.temurin(v.toString))
+
+ThisBuild / githubWorkflowJavaVersions := javaVersions
+ThisBuild / githubWorkflowArtifactUpload := false
+ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
+ThisBuild / githubWorkflowTargetBranches := Seq("main")
+ThisBuild / githubWorkflowPublishTargetBranches := Seq()
+
+ThisBuild / githubWorkflowBuild := Seq(
+  WorkflowStep.Sbt(List("test", "scripted"), name = Some("test")),
+)
+
 lazy val commonSettings = Seq(
   organization := "bondlink",
   version := "0.1.0-SNAPSHOT",
