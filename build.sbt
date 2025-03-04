@@ -54,6 +54,7 @@ lazy val plugin = project.in(file("plugin"))
   .settings(commonSettings)
   .settings(
     name := "tasty-query-unused-plugin",
+    scalaVersion := scala2,
     crossScalaVersions := Seq(scala2/*, scala36*/),
     pluginCrossBuild / sbtVersion := {
       scalaBinaryVersion.value match {
