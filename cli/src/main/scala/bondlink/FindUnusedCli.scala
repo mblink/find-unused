@@ -18,7 +18,11 @@ object FindUnusedCli {
     @arg(short = 'c', doc = "Classpath") classpath: Seq[String],
   ): Unit = {
     val givens = FindUnusedGivens.all(`package`, classpath.distinct.map(Paths.get(_)))
-    val unused = givens.defined.filterNot((code, _) => givens.used.contains(code)).toList.map(_._2).sorted
+    val unused = givens.defined
+      .filterNot((code, _) => givens.used.contains(code))
+      .toList
+      .map { case (_, (name, pos)) => name ++ pos.fold("")(p => s" at $p") }
+      .sorted
 
     if (unused.lengthIs > 0) {
       val len = unused.length

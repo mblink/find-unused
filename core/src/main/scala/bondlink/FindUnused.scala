@@ -6,6 +6,7 @@ import cats.syntax.all.*
 import java.net.URI
 import java.nio.file.{FileSystems, Path}
 import tastyquery.Contexts.Context
+import tastyquery.SourcePosition
 import tastyquery.Symbols.*
 import tastyquery.Trees.*
 import tastyquery.Types.*
@@ -23,7 +24,7 @@ object FindUnusedGivens {
   case class Env(log: Boolean, seenSymbols: Set[Int])
 
   case class Givens(
-    defined: Map[Int, String],
+    defined: Map[Int, (String, Option[String])],
     used: Set[Int],
   )
 
@@ -40,9 +41,14 @@ object FindUnusedGivens {
         case None => sym.displayFullName
       }
 
+    // TODO - sourceFile is relative, can we get an absolute path?
+    private def formatPos(pos: SourcePosition): String =
+      if (pos.hasLineColumnInformation) s"${pos.sourceFile}:${pos.pointLine + 1}:${pos.pointColumn + 1}"
+      else pos.toString
+
     def defined(sym: TermSymbol)(using ctx: Context): Givens =
       Givens(
-        defined = Map(sym.hashCode -> symName(sym)),
+        defined = Map(sym.hashCode -> (symName(sym), sym.tree.map(t => formatPos(t.pos)))),
         // If a symbol overrides another, consider it used
         // This accounts for cases where a `given` is used in a parent class, but not in the subclass
         used = sym.nextOverriddenSymbol.fold(Set.empty)(_ => Set(sym.hashCode)),
