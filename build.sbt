@@ -24,7 +24,6 @@ ThisBuild / githubWorkflowBuild := Seq(
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
-  version := "0.1.0-SNAPSHOT",
   scalaVersion := scala36,
   crossScalaVersions := Seq(/*scala33,*/ scala36),
 )
