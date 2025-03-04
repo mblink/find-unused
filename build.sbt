@@ -36,7 +36,7 @@ ThisBuild / githubWorkflowOSes := githubOSes.map(_._1)
 ThisBuild / githubWorkflowJavaVersions := javaVersions
 ThisBuild / githubWorkflowArtifactUpload := false
 ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
-ThisBuild / githubWorkflowTargetBranches := Seq("main")
+ThisBuild / githubWorkflowTargetBranches := Seq("main", "native-image")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
