@@ -9,16 +9,35 @@ lazy val scala36 = "3.6.3"
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 
-val javaVersions = Seq(11, 17, 21).map(v => JavaSpec.temurin(v.toString))
+val javaVersions = Seq(
+  JavaSpec.temurin("11"),
+  JavaSpec.temurin("17"),
+  JavaSpec.graalvm(Graalvm.Distribution("graalvm"), "21"),
+)
 
+ThisBuild / githubWorkflowOSes := Seq(
+  "ubuntu-latest",
+  "ubuntu-24.04-arm",
+  "macos-13", // x64
+  "macos-latest", // ARM
+  "windows-latest",
+)
 ThisBuild / githubWorkflowJavaVersions := javaVersions
 ThisBuild / githubWorkflowArtifactUpload := false
 ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
 ThisBuild / githubWorkflowTargetBranches := Seq("main")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
+def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
+def isScala(v: String) = s"matrix.scala == '$v'"
+
 ThisBuild / githubWorkflowBuild := Seq(
-  WorkflowStep.Sbt(List("test", "scripted"), name = Some("test")),
+  WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
+  WorkflowStep.Sbt(
+    List("cli/GraalVMNativeImage/packageBin"),
+    name = Some("Build CLI"),
+    cond = Some(isJava(21) ++ " && " ++ isScala(scala36)),
+  ),
 )
 
 lazy val commonSettings = Seq(
@@ -62,6 +81,7 @@ lazy val cli = project.in(file("cli"))
       "com.lihaoyi" %% "mainargs" % "0.7.6",
     ),
     run / fork := true,
+    graalVMNativeImageOptions += "--no-fallback",
   )
   .dependsOn(core)
   .aggregate(core)
