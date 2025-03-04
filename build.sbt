@@ -75,6 +75,7 @@ lazy val plugin = project.in(file("plugin"))
   .settings(
     name := "find-unused-plugin",
     scalaVersion := scala2,
+    // Waiting on sbt 2.0.0-M4 to enable Scala 3.6, we need `Def.inputTaskDyn` which landed in https://github.com/sbt/sbt/pull/8033
     crossScalaVersions := Seq(scala2/*, scala36*/),
     pluginCrossBuild / sbtVersion := {
       scalaBinaryVersion.value match {
