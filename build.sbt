@@ -27,10 +27,20 @@ lazy val commonSettings = Seq(
   scalaVersion := scala36,
   crossScalaVersions := Seq(/*scala33,*/ scala36),
   licenses += License.Apache2,
+  publish / skip := true,
+)
+
+commonSettings
+gitRelease := {}
+
+lazy val publishSettings = Seq(
+  publish / skip := false,
+  gitPublishDir := file("/src/maven-repo"),
 )
 
 lazy val core = project.in(file("core"))
   .settings(commonSettings)
+  .settings(publishSettings)
   .settings(
     name := "find-unused-core",
     libraryDependencies ++= (
@@ -51,6 +61,7 @@ lazy val core = project.in(file("core"))
 
 lazy val cli = project.in(file("cli"))
   .settings(commonSettings)
+  .settings(publishSettings)
   .settings(
     name := "find-unused-cli",
     libraryDependencies ++= Seq(
@@ -66,6 +77,7 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
 lazy val plugin = project.in(file("plugin"))
   .settings(commonSettings)
+  .settings(publishSettings)
   .settings(
     name := "find-unused-plugin",
     scalaVersion := scala2,
