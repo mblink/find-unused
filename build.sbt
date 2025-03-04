@@ -9,36 +9,59 @@ lazy val scala36 = "3.6.3"
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 
-val javaVersions = Seq(
-  JavaSpec.temurin("11"),
-  JavaSpec.temurin("17"),
-  JavaSpec.graalvm(Graalvm.Distribution("graalvm"), "21"),
+val java21 = JavaSpec.graalvm(Graalvm.Distribution("graalvm"), "21")
+val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
+
+val ubuntuLatest = "ubuntu-latest"
+val githubOSes = List(
+  ubuntuLatest -> "linux",
+  "ubuntu-24.04-arm" -> "linux-arm",
+  "macos-13" -> "mac",
+  "macos-latest" -> "mac-arm",
+  "windows-latest" -> "windows",
 )
 
-ThisBuild / githubWorkflowOSes := Seq(
-  "ubuntu-latest",
-  "ubuntu-24.04-arm",
-  "macos-13", // x64
-  "macos-latest", // ARM
-  "windows-latest",
-)
+ThisBuild / githubWorkflowOSes := githubOSes.map(_._1)
 ThisBuild / githubWorkflowJavaVersions := javaVersions
 ThisBuild / githubWorkflowArtifactUpload := false
 ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
 ThisBuild / githubWorkflowTargetBranches := Seq("main")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
+def isOS(os: String) = s"matrix.os == '$os'"
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
 
+val java21AndScala36 = isJava(21) ++ " && " ++ isScala(scala36)
+
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
-  WorkflowStep.Sbt(
-    List("cli/GraalVMNativeImage/packageBin"),
-    name = Some("Build CLI"),
-    cond = Some(isJava(21) ++ " && " ++ isScala(scala36)),
+  WorkflowStep.Sbt(List("cli/GraalVMNativeImage/packageBin"), name = Some("Build CLI"), cond = Some(java21AndScala36)),
+) ++ githubOSes.map { case (long, short) =>
+  WorkflowStep.Run(
+    List(s"cp cli/target/graalvm-native-image/find-unused-cli cli/artifacts/find-unused-$short"),
+    name = Some(s"Copy CLI ($long)"),
+    cond = Some(java21AndScala36 ++ " && " ++ isOS(long)),
+  )
+} ++ Seq(
+  WorkflowStep.Use(
+    ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
+    name = Some("Attest CLI"),
+    params = Map("subject-path" -> "cli/artifacts/*"),
   ),
-)
+) ++ githubOSes.map { case (long, short) =>
+  WorkflowStep.Use(
+    ref = UseRef.Public("actions", "upload-artifact", "v4"),
+    name = Some(s"Upload CLI ($long)"),
+    cond = Some(java21AndScala36 ++ " && " ++ isOS(long)),
+    params = Map(
+      "name" -> s"find-unused-$short",
+      "path" -> "cli/artifacts/",
+      "if-no-file-found" -> "error",
+      "retention-days" -> "2",
+    )
+  )
+}
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
