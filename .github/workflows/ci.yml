@@ -31,8 +31,9 @@ jobs:
         java: [graal_graalvm@21]
         include:
           - os: windows-latest
-            cli_name: find-unused-windows
-            cli_path: cli/artifacts/find-unused-windows
+            cli_input_path: cli/target/graalvm-native-image/find-unused-cli.exe
+            cli_output_name: find-unused-windows.exe
+            cli_output_path: cli/artifacts/find-unused-windows.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Ignore line ending differences in git
@@ -85,19 +86,19 @@ jobs:
         run: |
           mkdir -p cli/artifacts
           ls -l cli/target/graalvm-native-image/
-          cp cli/target/graalvm-native-image/find-unused-cli ${{ matrix.cli_path }}
+          cp ${{ matrix.cli_input_path }} ${{ matrix.cli_output_path }}
 
       - name: Attest CLI
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: cli/artifacts/${{ matrix.cli_name }}
+          subject-path: cli/artifacts/${{ matrix.cli_output_name }}
 
       - name: Upload CLI
         if: matrix.java == 'graal_graalvm@21' && matrix.scala == '3.6.3'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.cli_name }}
+          name: ${{ matrix.cli_output_name }}
           path: cli/artifacts/
           if-no-files-found: error
           retention-days: 2

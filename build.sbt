@@ -22,7 +22,8 @@ val githubOSes = List(
 )
 
 val cliArtifacts = "cli/artifacts"
-def cliName(osShort: String): String = s"find-unused-$osShort"
+def cliExt(osShort: String): String = if (osShort == "windows") ".exe" else ""
+def cliName(osShort: String): String = "find-unused-" ++ osShort ++ cliExt(osShort)
 def cliPath(osShort: String): String = s"$cliArtifacts/${cliName(osShort)}"
 
 ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
@@ -30,7 +31,14 @@ ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
   PermissionScope.Attestations -> PermissionValue.Write,
 )))
 ThisBuild / githubWorkflowBuildMatrixInclusions := githubOSes.map { case (long, short) =>
-  MatrixInclude(Map("os" -> long), Map("cli_name" -> cliName(short), "cli_path" -> cliPath(short)))
+  MatrixInclude(
+    Map("os" -> long),
+    Map(
+      "cli_input_path" -> ("cli/target/graalvm-native-image/find-unused-cli" ++ cliExt(short)),
+      "cli_output_name" -> cliName(short),
+      "cli_output_path" -> cliPath(short),
+    ),
+  )
 }
 ThisBuild / githubWorkflowOSes := githubOSes.map(_._1)
 ThisBuild / githubWorkflowJavaVersions := javaVersions
@@ -51,7 +59,7 @@ ThisBuild / githubWorkflowBuild := Seq(
     List(
       s"mkdir -p $cliArtifacts",
       "ls -l cli/target/graalvm-native-image/",
-      "cp cli/target/graalvm-native-image/find-unused-cli ${{ matrix.cli_path }}",
+      "cp ${{ matrix.cli_input_path }} ${{ matrix.cli_output_path }}",
     ),
     name = Some("Copy CLI"),
     cond = Some(java21AndScala36),
@@ -60,14 +68,14 @@ ThisBuild / githubWorkflowBuild := Seq(
     ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
     name = Some("Attest CLI"),
     cond = Some(java21AndScala36),
-    params = Map("subject-path" -> "cli/artifacts/${{ matrix.cli_name }}"),
+    params = Map("subject-path" -> "cli/artifacts/${{ matrix.cli_output_name }}"),
   ),
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "upload-artifact", "v4"),
     name = Some("Upload CLI"),
     cond = Some(java21AndScala36),
     params = Map(
-      "name" -> "${{ matrix.cli_name }}",
+      "name" -> "${{ matrix.cli_output_name }}",
       "path" -> "cli/artifacts/",
       "if-no-files-found" -> "error",
       "retention-days" -> "2",
