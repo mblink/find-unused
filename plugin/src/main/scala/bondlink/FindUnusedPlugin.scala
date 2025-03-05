@@ -3,6 +3,7 @@ package bondlink
 import coursier.Fetch
 import coursier.core.*
 import coursier.maven.MavenRepository
+import java.io.{PrintWriter, StringWriter}
 import sbt.*
 import sbt.internal.util.complete.*
 import sbt.internal.util.complete.Parsers.*
@@ -41,7 +42,7 @@ object FindUnusedPlugin extends AutoPlugin {
   private val findUnusedStoreAllProjectClasspaths = "findUnusedStoreAllProjectClasspaths"
 
   private lazy val commands = Seq(
-    Command.command(findUnusedStoreAllProjectClasspaths)(storeAllProjectClasspaths),
+    Command.command(findUnusedStoreAllProjectClasspaths)(findUnusedStoreAllProjectClasspaths),
   )
 
   override lazy val globalSettings: Seq[Setting[?]] = Def.settings(
@@ -50,16 +51,57 @@ object FindUnusedPlugin extends AutoPlugin {
     findUnusedCliClasspath := findUnusedCliClasspathTask.value,
     findUnusedCommandOptions := findUnusedCommandOptionsTask.value,
     findUnusedUseLocalClasspath := false,
-    findUnusedStoreProjectClasspaths := storeProjectClasspathsTask.evaluated,
+    findUnusedStoreProjectClasspaths := findUnusedStoreProjectClasspathsTask.evaluated,
     findUnusedPackages := Seq.empty,
     findUnusedGivens := findUnusedGivensTask.value,
     Keys.commands ++= commands,
   )
 
+  // https://stackoverflow.com/a/39868021/2163024
+  private def autoClose[A <: AutoCloseable, B](a: A)(f: A => B): B = {
+    var err: Throwable = null
+    try { f(a) }
+    catch {
+      case t: Throwable =>
+        err = t
+        err.printStackTrace()
+        throw err
+    } finally {
+      if (err != null)
+        try { a.close() }
+        catch {
+          case t: Throwable =>
+            err.addSuppressed(t)
+            err.printStackTrace()
+            throw err
+        }
+      else
+        a.close()
+    }
+  }
+
+  private def runLogged[A](log: Logger, f: () => A): A =
+    scala.util.Try(f()).fold(
+      e => {
+        autoClose(new StringWriter())(sw =>
+          autoClose(new PrintWriter(sw)) { pw =>
+            e.printStackTrace(pw)
+            log.error(sw.toString)
+          }
+        )
+        throw e
+      },
+      identity,
+    )
+
   private lazy val findUnusedCliDownloadTask = Def.task {
+    val log = streams.value.log
+
+    log.info("Fetching find-unused CLI with coursier")
+
     val dep = Dependency(Module(Organization("bondlink"), ModuleName("find-unused-cli_3"), Map.empty), BuildInfo.version)
     val repos = Seq(MavenRepository("https://raw.githubusercontent.com/mblink/maven-repo/main"))
-    Fetch().withRepositories(repos).addDependencies(dep).run()
+    runLogged(log, () => Fetch().withRepositories(repos).addDependencies(dep).run())
   }
 
   private lazy val findUnusedCliClasspathTask = Def.taskDyn {
@@ -75,7 +117,7 @@ object FindUnusedPlugin extends AutoPlugin {
     )
   }
 
-  private lazy val storeProjectClasspathsTask = Def.inputTaskDyn {
+  private lazy val findUnusedStoreProjectClasspathsTask = Def.inputTaskDyn {
     val scalaVersionInput = (Parsers.Space ~> scalaVersionParser).parsed
     val state = Keys.state.value
     val projectRefs = state.attributes(findUnusedProjectsKey).filter(p => state.setting(p / scalaVersion) == scalaVersionInput)
@@ -95,7 +137,7 @@ object FindUnusedPlugin extends AutoPlugin {
     }
   }
 
-  private def storeAllProjectClasspaths(state: State): State = {
+  private def findUnusedStoreAllProjectClasspaths(state: State): State = {
     val loadedBuild = state.setting(Keys.loadedBuild)
     // all project refs that have a Scala version
     val projectRefs = loadedBuild.allProjectRefs.map(_._1).filter(p => state.getSetting(p / scalaVersion).isDefined)

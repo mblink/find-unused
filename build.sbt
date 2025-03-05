@@ -9,16 +9,103 @@ lazy val scala36 = "3.6.3"
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 
-val javaVersions = Seq(11, 17, 21).map(v => JavaSpec.temurin(v.toString))
+val java21 = JavaSpec.temurin("21")
+val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
 
+val isTag = "startsWith(github.ref, 'refs/tags/v')"
+
+val cliAssemblyJarNameEnv = "FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME"
+val cliAssemblyJarNameSimple = "find-unused-assembly.jar"
+
+val cliArtifacts = "cli/artifacts/"
+
+val cliName = "${{ format('find-unused-{0}.jar" ++ "', " ++ isTag ++ " && github.ref_name || github.sha) }}"
+val cliNameNoSuffix = "find-unused.jar"
+
+val cliPath = cliArtifacts ++ cliName
+val cliPathNoSuffix = cliArtifacts ++ cliNameNoSuffix
+
+ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
+  PermissionScope.Attestations -> PermissionValue.Write,
+  PermissionScope.Contents -> PermissionValue.Write,
+  PermissionScope.IdToken -> PermissionValue.Write,
+)))
 ThisBuild / githubWorkflowJavaVersions := javaVersions
 ThisBuild / githubWorkflowArtifactUpload := false
 ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
 ThisBuild / githubWorkflowTargetBranches := Seq("main")
+ThisBuild / githubWorkflowTargetTags := Seq("v*")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
+def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
+def isScala(v: String) = s"matrix.scala == '$v'"
+
+val shouldBuildCLI = isJava(21) ++ " && " ++ isScala(scala36) ++ " && github.event_name == 'push'"
+
 ThisBuild / githubWorkflowBuild := Seq(
-  WorkflowStep.Sbt(List("test", "scripted"), name = Some("test")),
+  WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
+  WorkflowStep.Sbt(
+    List("cli/assembly"),
+    name = Some("Build CLI"),
+    cond = Some(shouldBuildCLI),
+    env = Map(cliAssemblyJarNameEnv -> cliAssemblyJarNameSimple)
+  ),
+  WorkflowStep.Run(
+    List(
+      s"mkdir -p $cliArtifacts",
+      "cp cli/target/scala-${{ matrix.scala }}/" ++ cliAssemblyJarNameSimple ++ " " ++ cliPath,
+    ),
+    name = Some("Copy CLI"),
+    cond = Some(shouldBuildCLI),
+  ),
+  WorkflowStep.Use(
+    ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
+    name = Some("Attest CLI"),
+    cond = Some(shouldBuildCLI),
+    params = Map("subject-path" -> cliPath),
+  ),
+  WorkflowStep.Use(
+    ref = UseRef.Public("actions", "upload-artifact", "v4"),
+    name = Some("Upload CLI"),
+    cond = Some(shouldBuildCLI),
+    params = Map(
+      "name" -> cliName,
+      "path" -> cliArtifacts,
+      "if-no-files-found" -> "error",
+      "retention-days" -> "2",
+    )
+  ),
+)
+
+ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
+  id = "release",
+  name = "Release",
+  oses = List("ubuntu-latest"),
+  javas = List(java21),
+  scalas = List(scala36),
+  cond = Some(isTag ++ " && github.event_name == 'push'"),
+  needs = List("build"),
+  steps = List(
+    WorkflowStep.CheckoutFull,
+    WorkflowStep.Use(
+      ref = UseRef.Public("actions", "download-artifact", "v4"),
+      name = Some("Download CLI"),
+      params = Map("name" -> cliName, "path" -> cliArtifacts),
+    ),
+    WorkflowStep.Run(
+      List(s"cp $cliPath $cliPathNoSuffix"),
+      name = Some("Copy CLI"),
+    ),
+    WorkflowStep.Use(
+      ref = UseRef.Public("softprops", "action-gh-release", "v2"),
+      name = Some("Create Release"),
+      params = Map(
+        "draft" -> "true",
+        "files" -> cliPathNoSuffix,
+        "fail_on_unmatched_files" -> "true",
+      ),
+    ),
+  ),
 )
 
 lazy val commonSettings = Seq(
@@ -62,10 +149,15 @@ lazy val cli = project.in(file("cli"))
       "com.lihaoyi" %% "mainargs" % "0.7.6",
     ),
     run / fork := true,
+    assembly / aggregate := false,
+    assembly / mainClass := Some("bondlink.FindUnusedCli"),
   )
+  .settings(sys.env.get(cliAssemblyJarNameEnv) match {
+    case Some(name) => Seq(assembly / assemblyJarName := name)
+    case None => Seq.empty
+  })
   .dependsOn(core)
   .aggregate(core)
-  .enablePlugins(GraalVMNativeImagePlugin)
 
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
@@ -87,7 +179,7 @@ lazy val plugin = project.in(file("plugin"))
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
     libraryDependencies ++= Seq(
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)
-        .exclude("org.scala-lang.modules", "scala-xml_2.13")
+        .exclude("org.scala-lang.modules", "scala-xml_2.13"),
     ),
     cliClasspath := (cli / Runtime / fullClasspath).value.map(_.data),
     buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
