@@ -88,7 +88,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   oses = List(ubuntuLatest),
   javas = List(java21),
   scalas = List(scala36),
-  // cond = Some("startsWith(github.ref, 'refs/tags/v')"),
+  cond = Some("startsWith(github.ref, 'refs/tags/v')"),
   needs = List("build"),
   steps = List(WorkflowStep.CheckoutFull) ++
     githubOSes.map { case (_, short) =>
@@ -101,7 +101,6 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
       )
     } ++
     List(
-      WorkflowStep.Run(List(s"ls -l $cliArtifacts"), name = Some("List artifacts")),
       WorkflowStep.Use(
         ref = UseRef.Public("softprops", "action-gh-release", "v2"),
         name = Some("Create Release"),

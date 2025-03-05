@@ -142,6 +142,7 @@ jobs:
   release:
     name: Release
     needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -178,9 +179,6 @@ jobs:
         with:
           name: find-unused-windows.exe
           path: cli/artifacts/
-
-      - name: List artifacts
-        run: ls -l cli/artifacts/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
