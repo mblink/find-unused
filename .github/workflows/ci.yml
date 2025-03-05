@@ -38,24 +38,24 @@ jobs:
         include:
           - os: ubuntu-latest
             cli_input_path: cli/target/graalvm-native-image/find-unused-cli
-            cli_output_name: ${{ format('find-unused-linux-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-            cli_output_path: cli/artifacts/${{ format('find-unused-linux-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_name: ${{ format('find-unused-linux-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_path: cli/artifacts/${{ format('find-unused-linux-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           - os: ubuntu-24.04-arm
             cli_input_path: cli/target/graalvm-native-image/find-unused-cli
-            cli_output_name: ${{ format('find-unused-linux-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-            cli_output_path: cli/artifacts/${{ format('find-unused-linux-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_name: ${{ format('find-unused-linux-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_path: cli/artifacts/${{ format('find-unused-linux-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           - os: macos-13
             cli_input_path: cli/target/graalvm-native-image/find-unused-cli
-            cli_output_name: ${{ format('find-unused-mac-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-            cli_output_path: cli/artifacts/${{ format('find-unused-mac-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_name: ${{ format('find-unused-mac-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_path: cli/artifacts/${{ format('find-unused-mac-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           - os: macos-latest
             cli_input_path: cli/target/graalvm-native-image/find-unused-cli
-            cli_output_name: ${{ format('find-unused-mac-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-            cli_output_path: cli/artifacts/${{ format('find-unused-mac-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_name: ${{ format('find-unused-mac-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_path: cli/artifacts/${{ format('find-unused-mac-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           - os: windows-latest
             cli_input_path: cli/target/graalvm-native-image/find-unused-cli.exe
-            cli_output_name: ${{ format('find-unused-windows-{}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-            cli_output_path: cli/artifacts/${{ format('find-unused-windows-{}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_name: ${{ format('find-unused-windows-{0}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+            cli_output_path: cli/artifacts/${{ format('find-unused-windows-{0}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Ignore line ending differences in git
@@ -159,40 +159,40 @@ jobs:
       - name: Download artifact (linux)
         uses: actions/download-artifact@v4
         with:
-          name: ${{ format('find-unused-linux-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+          name: ${{ format('find-unused-linux-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           path: cli/artifacts/
 
       - name: Download artifact (linux-arm)
         uses: actions/download-artifact@v4
         with:
-          name: ${{ format('find-unused-linux-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+          name: ${{ format('find-unused-linux-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           path: cli/artifacts/
 
       - name: Download artifact (mac)
         uses: actions/download-artifact@v4
         with:
-          name: ${{ format('find-unused-mac-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+          name: ${{ format('find-unused-mac-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           path: cli/artifacts/
 
       - name: Download artifact (mac-arm)
         uses: actions/download-artifact@v4
         with:
-          name: ${{ format('find-unused-mac-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+          name: ${{ format('find-unused-mac-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           path: cli/artifacts/
 
       - name: Download artifact (windows)
         uses: actions/download-artifact@v4
         with:
-          name: ${{ format('find-unused-windows-{}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+          name: ${{ format('find-unused-windows-{0}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           path: cli/artifacts/
 
       - name: Copy artifacts
         run: |
-          cp cli/artifacts/${{ format('find-unused-linux-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-linux
-          cp cli/artifacts/${{ format('find-unused-linux-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-linux-arm
-          cp cli/artifacts/${{ format('find-unused-mac-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-mac
-          cp cli/artifacts/${{ format('find-unused-mac-arm-{}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-mac-arm
-          cp cli/artifacts/${{ format('find-unused-windows-{}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-windows.exe
+          cp cli/artifacts/${{ format('find-unused-linux-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-linux
+          cp cli/artifacts/${{ format('find-unused-linux-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-linux-arm
+          cp cli/artifacts/${{ format('find-unused-mac-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-mac
+          cp cli/artifacts/${{ format('find-unused-mac-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-mac-arm
+          cp cli/artifacts/${{ format('find-unused-windows-{0}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-windows.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

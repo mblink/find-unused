@@ -32,7 +32,7 @@ def cliNameNoSuffix(osShort: String): String =
   "find-unused-" ++ osShort ++ cliExt(osShort)
 
 def cliName(osShort: String): String =
-  "${{ format('find-unused-" ++ osShort ++ "-{}" ++ cliExt(osShort) ++ "', " ++ isTag ++ " && github.ref_name || github.sha) }}"
+  "${{ format('find-unused-" ++ osShort ++ "-{0}" ++ cliExt(osShort) ++ "', " ++ isTag ++ " && github.ref_name || github.sha) }}"
 
 def cliPath(osShort: String, name: String => String = cliName): String =
   cliArtifacts ++ name(osShort)
