@@ -210,11 +210,12 @@ jobs:
 
       - name: Compress CLI
         run: |
-          tar -cvzf cli/artifacts/find-unused-linux.tar.gz cli/artifacts/find-unused-linux
-          tar -cvzf cli/artifacts/find-unused-linux-arm.tar.gz cli/artifacts/find-unused-linux-arm
-          tar -cvzf cli/artifacts/find-unused-mac.tar.gz cli/artifacts/find-unused-mac
-          tar -cvzf cli/artifacts/find-unused-mac-arm.tar.gz cli/artifacts/find-unused-mac-arm
-          tar -cvzf cli/artifacts/find-unused-windows.exe.tar.gz cli/artifacts/find-unused-windows.exe
+          cd cli/artifacts/
+          tar -cvzf find-unused-linux.tar.gz find-unused-linux
+          tar -cvzf find-unused-linux-arm.tar.gz find-unused-linux-arm
+          tar -cvzf find-unused-mac.tar.gz find-unused-mac
+          tar -cvzf find-unused-mac-arm.tar.gz find-unused-mac-arm
+          tar -cvzf find-unused-windows.exe.tar.gz find-unused-windows.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

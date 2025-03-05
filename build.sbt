@@ -138,8 +138,8 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
         ),
       ),
       WorkflowStep.Run(
-        githubOSes.map { case (_, short) =>
-          val f = cliPath(short, cliNameNoSuffix)
+        s"cd $cliArtifacts" :: githubOSes.map { case (_, short) =>
+          val f = cliNameNoSuffix(short)
           s"tar -cvzf $f.tar.gz $f"
         },
         name = Some("Compress CLI"),
