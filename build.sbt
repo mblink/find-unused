@@ -15,7 +15,6 @@ val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
 val isTag = "startsWith(github.ref, 'refs/tags/v')"
 
 val cliAssemblyJarNameEnv = "FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME"
-val cliAssemblyJarNameSimple = "find-unused-assembly.jar"
 
 val cliArtifacts = "cli/artifacts/"
 
@@ -48,12 +47,12 @@ ThisBuild / githubWorkflowBuild := Seq(
     List("cli/assembly"),
     name = Some("Build CLI"),
     cond = Some(shouldBuildCLI),
-    env = Map(cliAssemblyJarNameEnv -> cliAssemblyJarNameSimple)
+    env = Map(cliAssemblyJarNameEnv -> cliName)
   ),
   WorkflowStep.Run(
     List(
       s"mkdir -p $cliArtifacts",
-      "cp cli/target/scala-${{ matrix.scala }}/" ++ cliAssemblyJarNameSimple ++ " " ++ cliPath,
+      "cp cli/target/scala-${{ matrix.scala }}/" ++ cliName ++ " " ++ cliPath,
     ),
     name = Some("Copy CLI"),
     cond = Some(shouldBuildCLI),
