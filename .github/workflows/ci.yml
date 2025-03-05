@@ -74,14 +74,14 @@ jobs:
       - name: Build CLI
         if: matrix.java == 'temurin@21' && matrix.scala == '3.6.3' && github.event_name == 'push'
         env:
-          FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME: find-unused-assembly.jar
+          FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME: ${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
         run: sbt '++ ${{ matrix.scala }}' cli/assembly
 
       - name: Copy CLI
         if: matrix.java == 'temurin@21' && matrix.scala == '3.6.3' && github.event_name == 'push'
         run: |
           mkdir -p cli/artifacts/
-          cp cli/target/scala-${{ matrix.scala }}/find-unused-assembly.jar cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+          cp cli/target/scala-${{ matrix.scala }}/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
 
       - name: Attest CLI
         if: matrix.java == 'temurin@21' && matrix.scala == '3.6.3' && github.event_name == 'push'
