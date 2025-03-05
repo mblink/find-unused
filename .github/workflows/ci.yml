@@ -34,8 +34,8 @@ jobs:
           - macos-13
           - macos-latest
           - windows-latest
-        scala: [2.12.20, 3.6.3]
-        java: [temurin@11, temurin@17, graal_graalvm@21]
+        scala: [3.6.3]
+        java: [graal_graalvm@21]
         include:
           - os: ubuntu-latest
             cli_input_path: cli/target/graalvm-native-image/find-unused-cli
@@ -76,22 +76,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Setup Java (temurin@11)
-        if: matrix.java == 'temurin@11'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 11
-          cache: sbt
-
-      - name: Setup Java (temurin@17)
-        if: matrix.java == 'temurin@17'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-          cache: sbt
 
       - name: Setup GraalVM (graal_graalvm@21)
         if: matrix.java == 'graal_graalvm@21'
@@ -144,7 +128,6 @@ jobs:
   release:
     name: Release
     needs: [build]
-    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -187,7 +170,7 @@ jobs:
           name: ${{ format('find-unused-windows-{0}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
           path: cli/artifacts/
 
-      - name: Copy artifacts
+      - name: Copy CLI
         run: |
           cp cli/artifacts/${{ format('find-unused-linux-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-linux
           cp cli/artifacts/${{ format('find-unused-linux-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-linux-arm
@@ -195,14 +178,18 @@ jobs:
           cp cli/artifacts/${{ format('find-unused-mac-arm-{0}', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-mac-arm
           cp cli/artifacts/${{ format('find-unused-windows-{0}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-windows.exe
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: List pre-compression
+        run: ls -l cli/artifacts/
+
+      - name: Pack CLI
+        uses: crazy-max/ghaction-upx@v3
         with:
-          draft: true
           files: |
             cli/artifacts/find-unused-linux
             cli/artifacts/find-unused-linux-arm
             cli/artifacts/find-unused-mac
             cli/artifacts/find-unused-mac-arm
             cli/artifacts/find-unused-windows.exe
-          fail_on_unmatched_files: true
+
+      - name: List post-compression
+        run: ls -l cli/artifacts/
