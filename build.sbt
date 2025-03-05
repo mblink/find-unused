@@ -40,15 +40,14 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
 
-val java21AndScala36 = isJava(21) ++ " && " ++ isScala(scala36)
-val java21AndScala36AndPush = java21AndScala36 ++ " && github.event_name == 'push'"
+val shouldBuildCLI = isJava(21) ++ " && " ++ isScala(scala36) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
   WorkflowStep.Sbt(
     List("cli/assembly"),
     name = Some("Build CLI"),
-    cond = Some(java21AndScala36AndPush),
+    cond = Some(shouldBuildCLI),
     env = Map(cliAssemblyJarNameEnv -> cliAssemblyJarNameSimple)
   ),
   WorkflowStep.Run(
@@ -57,18 +56,18 @@ ThisBuild / githubWorkflowBuild := Seq(
       "cp cli/target/scala-${{ matrix.scala }}/" ++ cliAssemblyJarNameSimple ++ " " ++ cliPath,
     ),
     name = Some("Copy CLI"),
-    cond = Some(java21AndScala36AndPush),
+    cond = Some(shouldBuildCLI),
   ),
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
     name = Some("Attest CLI"),
-    cond = Some(java21AndScala36AndPush),
+    cond = Some(shouldBuildCLI),
     params = Map("subject-path" -> cliPath),
   ),
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "upload-artifact", "v4"),
     name = Some("Upload CLI"),
-    cond = Some(java21AndScala36AndPush),
+    cond = Some(shouldBuildCLI),
     params = Map(
       "name" -> cliName,
       "path" -> cliArtifacts,
