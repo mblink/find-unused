@@ -12,6 +12,7 @@ on:
     branches: [main, native-image]
   push:
     branches: [main, native-image]
+    tags: [v*]
 
 permissions:
   id-token: write
