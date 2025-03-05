@@ -7,10 +7,10 @@ lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 lazy val scala2 = "2.12.20"
 lazy val scala36 = "3.6.3"
 
-ThisBuild / crossScalaVersions := Seq(/*scala2,*/ scala36)
+ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 
 val java21 = JavaSpec.graalvm(Graalvm.Distribution("graalvm"), "21")
-val javaVersions = Seq(/*JavaSpec.temurin("11"), JavaSpec.temurin("17"),*/ java21)
+val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
 
 val ubuntuLatest = "ubuntu-latest"
 val githubOSes = List(
@@ -106,7 +106,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   oses = List(ubuntuLatest),
   javas = List(java21),
   scalas = List(scala36),
-  // cond = Some("startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'"),
+  cond = Some("startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'"),
   needs = List("build"),
   steps = List(WorkflowStep.CheckoutFull) ++
     githubOSes.map { case (_, short) =>
@@ -127,10 +127,6 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
         },
         name = Some("Copy CLI"),
       ),
-      WorkflowStep.Run(
-        List(s"ls -l $cliArtifacts"),
-        name = Some("List pre-compression"),
-      ),
       WorkflowStep.Use(
         ref = UseRef.Public("crazy-max", "ghaction-upx", "v3"),
         name = Some("Pack CLI"),
@@ -148,19 +144,15 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
         },
         name = Some("Compress CLI"),
       ),
-      WorkflowStep.Run(
-        List(s"ls -l $cliArtifacts"),
-        name = Some("List post-compression"),
+      WorkflowStep.Use(
+        ref = UseRef.Public("softprops", "action-gh-release", "v2"),
+        name = Some("Create Release"),
+        params = Map(
+          "draft" -> "true",
+          "files" -> githubOSes.map { case (_, short) => cliPath(short, cliNameNoSuffix) ++ ".tar.gz" }.mkString("\n"),
+          "fail_on_unmatched_files" -> "true",
+        ),
       ),
-      // WorkflowStep.Use(
-      //   ref = UseRef.Public("softprops", "action-gh-release", "v2"),
-      //   name = Some("Create Release"),
-      //   params = Map(
-      //     "draft" -> "true",
-      //     "files" -> githubOSes.map { case (_, short) => cliPath(short, cliNameNoSuffix) ++ ".tar.gz" }.mkString("\n"),
-      //     "fail_on_unmatched_files" -> "true",
-      //   ),
-      // ),
     )
 )
 

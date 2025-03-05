@@ -34,8 +34,8 @@ jobs:
           - macos-13
           - macos-latest
           - windows-latest
-        scala: [3.6.3]
-        java: [graal_graalvm@21]
+        scala: [2.12.20, 3.6.3]
+        java: [temurin@11, temurin@17, graal_graalvm@21]
         include:
           - os: ubuntu-latest
             cli_input_path: cli/target/graalvm-native-image/find-unused-cli
@@ -76,6 +76,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Setup Java (temurin@11)
+        if: matrix.java == 'temurin@11'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+          cache: sbt
+
+      - name: Setup Java (temurin@17)
+        if: matrix.java == 'temurin@17'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
 
       - name: Setup GraalVM (graal_graalvm@21)
         if: matrix.java == 'graal_graalvm@21'
@@ -128,6 +144,7 @@ jobs:
   release:
     name: Release
     needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -183,9 +200,6 @@ jobs:
           cp cli/artifacts/${{ format('find-unused-windows-{0}.exe', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/find-unused-windows.exe
           chmod +x cli/artifacts/find-unused-windows.exe
 
-      - name: List pre-compression
-        run: ls -l cli/artifacts/
-
       - name: Pack CLI
         uses: crazy-max/ghaction-upx@v3
         with:
@@ -202,5 +216,14 @@ jobs:
           tar -cvzf cli/artifacts/find-unused-mac-arm.tar.gz cli/artifacts/find-unused-mac-arm
           tar -cvzf cli/artifacts/find-unused-windows.exe.tar.gz cli/artifacts/find-unused-windows.exe
 
-      - name: List post-compression
-        run: ls -l cli/artifacts/
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            cli/artifacts/find-unused-linux.tar.gz
+            cli/artifacts/find-unused-linux-arm.tar.gz
+            cli/artifacts/find-unused-mac.tar.gz
+            cli/artifacts/find-unused-mac-arm.tar.gz
+            cli/artifacts/find-unused-windows.exe.tar.gz
+          fail_on_unmatched_files: true
