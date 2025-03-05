@@ -118,7 +118,13 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
     } ++
     List(
       WorkflowStep.Run(
-        githubOSes.map { case (_, short) => s"cp ${cliPath(short)} ${cliPath(short, cliNameNoSuffix)}" },
+        githubOSes.flatMap { case (_, short) =>
+          val f = cliPath(short, cliNameNoSuffix)
+          List(
+            s"cp ${cliPath(short)} $f",
+            s"chmod +x $f",
+          )
+        },
         name = Some("Copy CLI"),
       ),
       WorkflowStep.Run(
