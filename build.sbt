@@ -38,8 +38,9 @@ def cliPath(osShort: String, name: String => String = cliName): String =
   cliArtifacts ++ name(osShort)
 
 ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
-  PermissionScope.IdToken -> PermissionValue.Write,
   PermissionScope.Attestations -> PermissionValue.Write,
+  PermissionScope.Contents -> PermissionValue.Write,
+  PermissionScope.IdToken -> PermissionValue.Write,
 )))
 ThisBuild / githubWorkflowBuildMatrixInclusions := githubOSes.map { case (long, short) =>
   MatrixInclude(
