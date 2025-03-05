@@ -12,51 +12,28 @@ ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 val java21 = JavaSpec.graalvm(Graalvm.Distribution("graalvm"), "21")
 val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
 
-val ubuntuLatest = "ubuntu-latest"
-val githubOSes = List(
-  ubuntuLatest -> "linux",
-  "ubuntu-24.04-arm" -> "linux-arm",
-  "macos-13" -> "mac",
-  "macos-latest" -> "mac-arm",
-  "windows-latest" -> "windows",
-)
+val cliAssemblyJarNameEnv = "FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME"
+val cliAssemblyJarNameSimple = "find-unused-assembly.jar"
 
 val isTag = "startsWith(github.ref, 'refs/tags/v')"
 
 val cliArtifacts = "cli/artifacts/"
 
-def cliExt(osShort: String): String =
-  if (osShort == "windows") ".exe" else ""
+val cliName = "${{ format('find-unused-{0}.jar" ++ "', " ++ isTag ++ " && github.ref_name || github.sha) }}"
+val cliNameNoSuffix = "find-unused.jar"
 
-def cliNameNoSuffix(osShort: String): String =
-  "find-unused-" ++ osShort ++ cliExt(osShort)
-
-def cliName(osShort: String): String =
-  "${{ format('find-unused-" ++ osShort ++ "-{0}" ++ cliExt(osShort) ++ "', " ++ isTag ++ " && github.ref_name || github.sha) }}"
-
-def cliPath(osShort: String, name: String => String = cliName): String =
-  cliArtifacts ++ name(osShort)
+val cliPath = cliArtifacts ++ cliName
+val cliPathNoSuffix = cliArtifacts ++ cliNameNoSuffix
 
 ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
   PermissionScope.Attestations -> PermissionValue.Write,
   PermissionScope.Contents -> PermissionValue.Write,
   PermissionScope.IdToken -> PermissionValue.Write,
 )))
-ThisBuild / githubWorkflowBuildMatrixInclusions := githubOSes.map { case (long, short) =>
-  MatrixInclude(
-    Map("os" -> long),
-    Map(
-      "cli_input_path" -> ("cli/target/graalvm-native-image/find-unused-cli" ++ cliExt(short)),
-      "cli_output_name" -> cliName(short),
-      "cli_output_path" -> cliPath(short),
-    ),
-  )
-}
-ThisBuild / githubWorkflowOSes := githubOSes.map(_._1)
 ThisBuild / githubWorkflowJavaVersions := javaVersions
 ThisBuild / githubWorkflowArtifactUpload := false
 ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
-ThisBuild / githubWorkflowTargetBranches := Seq("main", "native-image")
+ThisBuild / githubWorkflowTargetBranches := Seq("main", "cli-assembly")
 ThisBuild / githubWorkflowTargetTags := Seq("v*")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
@@ -69,14 +46,15 @@ val java21AndScala36AndPush = java21AndScala36 ++ " && github.event_name == 'pus
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
   WorkflowStep.Sbt(
-    List("cli/GraalVMNativeImage/packageBin"),
+    List("cli/assembly"),
     name = Some("Build CLI"),
     cond = Some(java21AndScala36AndPush),
+    env = Map(cliAssemblyJarNameEnv -> cliAssemblyJarNameSimple)
   ),
   WorkflowStep.Run(
     List(
       s"mkdir -p $cliArtifacts",
-      "cp ${{ matrix.cli_input_path }} ${{ matrix.cli_output_path }}",
+      "cp cli/target/scala-${{ matrix.scala }}/" ++ cliAssemblyJarNameSimple ++ " " ++ cliPath,
     ),
     name = Some("Copy CLI"),
     cond = Some(java21AndScala36AndPush),
@@ -85,14 +63,14 @@ ThisBuild / githubWorkflowBuild := Seq(
     ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
     name = Some("Attest CLI"),
     cond = Some(java21AndScala36AndPush),
-    params = Map("subject-path" -> "cli/artifacts/${{ matrix.cli_output_name }}"),
+    params = Map("subject-path" -> cliPath),
   ),
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "upload-artifact", "v4"),
     name = Some("Upload CLI"),
     cond = Some(java21AndScala36AndPush),
     params = Map(
-      "name" -> "${{ matrix.cli_output_name }}",
+      "name" -> cliName,
       "path" -> cliArtifacts,
       "if-no-files-found" -> "error",
       "retention-days" -> "2",
@@ -103,57 +81,32 @@ ThisBuild / githubWorkflowBuild := Seq(
 ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   id = "release",
   name = "Release",
-  oses = List(ubuntuLatest),
+  oses = List("ubuntu-latest"),
   javas = List(java21),
   scalas = List(scala36),
-  cond = Some("startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'"),
+  cond = Some(isTag ++ " && github.event_name == 'push'"),
   needs = List("build"),
-  steps = List(WorkflowStep.CheckoutFull) ++
-    githubOSes.map { case (_, short) =>
-      WorkflowStep.Use(
-        ref = UseRef.Public("actions", "download-artifact", "v4"),
-        name = Some(s"Download artifact ($short)"),
-        params = Map("name" -> cliName(short), "path" -> cliArtifacts)
-      )
-    } ++
-    List(
-      WorkflowStep.Run(
-        githubOSes.flatMap { case (_, short) =>
-          val f = cliPath(short, cliNameNoSuffix)
-          List(
-            s"cp ${cliPath(short)} $f",
-            s"chmod +x $f",
-          )
-        },
-        name = Some("Copy CLI"),
+  steps = List(
+    WorkflowStep.CheckoutFull,
+    WorkflowStep.Use(
+      ref = UseRef.Public("actions", "download-artifact", "v4"),
+      name = Some("Download CLI"),
+      params = Map("name" -> cliName, "path" -> cliArtifacts),
+    ),
+    WorkflowStep.Run(
+      List(s"cp $cliPath $cliPathNoSuffix"),
+      name = Some("Copy CLI"),
+    ),
+    WorkflowStep.Use(
+      ref = UseRef.Public("softprops", "action-gh-release", "v2"),
+      name = Some("Create Release"),
+      params = Map(
+        "draft" -> "true",
+        "files" -> cliPathNoSuffix,
+        "fail_on_unmatched_files" -> "true",
       ),
-      WorkflowStep.Use(
-        ref = UseRef.Public("crazy-max", "ghaction-upx", "v3"),
-        name = Some("Pack CLI"),
-        params = Map(
-          "files" -> githubOSes
-            .filterNot(_._1.startsWith("macos-")) // upx doesn't work for mac -- https://github.com/upx/upx/issues/612
-            .map { case (_, short) => cliPath(short, cliNameNoSuffix) }
-            .mkString("\n"),
-        ),
-      ),
-      WorkflowStep.Run(
-        s"cd $cliArtifacts" :: githubOSes.map { case (_, short) =>
-          val f = cliNameNoSuffix(short)
-          s"tar -cvzf $f.tar.gz $f"
-        },
-        name = Some("Compress CLI"),
-      ),
-      WorkflowStep.Use(
-        ref = UseRef.Public("softprops", "action-gh-release", "v2"),
-        name = Some("Create Release"),
-        params = Map(
-          "draft" -> "true",
-          "files" -> githubOSes.map { case (_, short) => cliPath(short, cliNameNoSuffix) ++ ".tar.gz" }.mkString("\n"),
-          "fail_on_unmatched_files" -> "true",
-        ),
-      ),
-    )
+    ),
+  ),
 )
 
 lazy val commonSettings = Seq(
@@ -197,11 +150,15 @@ lazy val cli = project.in(file("cli"))
       "com.lihaoyi" %% "mainargs" % "0.7.6",
     ),
     run / fork := true,
-    graalVMNativeImageOptions += "--no-fallback",
+    assembly / aggregate := false,
+    assembly / mainClass := Some("bondlink.FindUnusedCli"),
   )
+  .settings(sys.env.get(cliAssemblyJarNameEnv) match {
+    case Some(name) => Seq(assembly / assemblyJarName := name)
+    case None => Seq.empty
+  })
   .dependsOn(core)
   .aggregate(core)
-  .enablePlugins(GraalVMNativeImagePlugin)
 
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
