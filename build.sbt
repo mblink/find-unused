@@ -21,10 +21,21 @@ val githubOSes = List(
   "windows-latest" -> "windows",
 )
 
+val isTag = "startsWith(github.ref, 'refs/tags/v')"
+
 val cliArtifacts = "cli/artifacts/"
-def cliExt(osShort: String): String = if (osShort == "windows") ".exe" else ""
-def cliName(osShort: String): String = "find-unused-" ++ osShort ++ cliExt(osShort)
-def cliPath(osShort: String): String = cliArtifacts ++ cliName(osShort)
+
+def cliExt(osShort: String): String =
+  if (osShort == "windows") ".exe" else ""
+
+def cliNameNoSuffix(osShort: String): String =
+  "find-unused-" ++ osShort ++ cliExt(osShort)
+
+def cliName(osShort: String): String =
+  "${{ format('find-unused-" ++ osShort ++ "-{}" ++ cliExt(osShort) ++ "', " ++ isTag ++ " && github.ref_name || github.sha) }}"
+
+def cliPath(osShort: String, name: String => String = cliName): String =
+  cliArtifacts ++ name(osShort)
 
 ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
   PermissionScope.IdToken -> PermissionValue.Write,
@@ -52,28 +63,33 @@ def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toStri
 def isScala(v: String) = s"matrix.scala == '$v'"
 
 val java21AndScala36 = isJava(21) ++ " && " ++ isScala(scala36)
+val java21AndScala36AndPush = java21AndScala36 ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
-  WorkflowStep.Sbt(List("cli/GraalVMNativeImage/packageBin"), name = Some("Build CLI"), cond = Some(java21AndScala36)),
+  WorkflowStep.Sbt(
+    List("cli/GraalVMNativeImage/packageBin"),
+    name = Some("Build CLI"),
+    cond = Some(java21AndScala36AndPush),
+  ),
   WorkflowStep.Run(
     List(
       s"mkdir -p $cliArtifacts",
       "cp ${{ matrix.cli_input_path }} ${{ matrix.cli_output_path }}",
     ),
     name = Some("Copy CLI"),
-    cond = Some(java21AndScala36),
+    cond = Some(java21AndScala36AndPush),
   ),
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "attest-build-provenance", "v2"),
     name = Some("Attest CLI"),
-    cond = Some(java21AndScala36),
+    cond = Some(java21AndScala36AndPush),
     params = Map("subject-path" -> "cli/artifacts/${{ matrix.cli_output_name }}"),
   ),
   WorkflowStep.Use(
     ref = UseRef.Public("actions", "upload-artifact", "v4"),
     name = Some("Upload CLI"),
-    cond = Some(java21AndScala36),
+    cond = Some(java21AndScala36AndPush),
     params = Map(
       "name" -> "${{ matrix.cli_output_name }}",
       "path" -> cliArtifacts,
@@ -89,25 +105,27 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   oses = List(ubuntuLatest),
   javas = List(java21),
   scalas = List(scala36),
-  cond = Some("startsWith(github.ref, 'refs/tags/v')"),
+  cond = Some("startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'"),
   needs = List("build"),
   steps = List(WorkflowStep.CheckoutFull) ++
     githubOSes.map { case (_, short) =>
       WorkflowStep.Use(
         ref = UseRef.Public("actions", "download-artifact", "v4"),
-        params = Map(
-          "name" -> cliName(short),
-          "path" -> cliArtifacts,
-        )
+        name = Some(s"Download artifact ($short)"),
+        params = Map("name" -> cliName(short), "path" -> cliArtifacts)
       )
     } ++
     List(
+      WorkflowStep.Run(
+        githubOSes.map { case (_, short) => s"cp ${cliPath(short)} ${cliPath(short, cliNameNoSuffix)}" },
+        name = Some("Copy artifacts"),
+      ),
       WorkflowStep.Use(
         ref = UseRef.Public("softprops", "action-gh-release", "v2"),
         name = Some("Create Release"),
         params = Map(
           "draft" -> "true",
-          "files" -> githubOSes.map { case (_, short) => cliPath(short) }.mkString("\n"),
+          "files" -> githubOSes.map { case (_, short) => cliPath(short, cliNameNoSuffix) }.mkString("\n"),
           "fail_on_unmatched_files" -> "true",
         ),
       ),
