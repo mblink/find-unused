@@ -133,10 +133,20 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
       ),
       WorkflowStep.Use(
         ref = UseRef.Public("crazy-max", "ghaction-upx", "v3"),
-        name = some("Pack CLI"),
+        name = Some("Pack CLI"),
         params = Map(
-          "files" -> githubOSes.map { case (_, short) => cliPath(short, cliNameNoSuffix) }.mkString("\n"),
+          "files" -> githubOSes
+            .filterNot(_._1.startsWith("macos-")) // upx doesn't work for mac -- https://github.com/upx/upx/issues/612
+            .map { case (_, short) => cliPath(short, cliNameNoSuffix) }
+            .mkString("\n"),
         ),
+      ),
+      WorkflowStep.Run(
+        githubOSes.map { case (_, short) =>
+          val f = cliPath(short, cliNameNoSuffix)
+          s"tar -cvzf $f.tar.gz $f"
+        },
+        name = Some("Compress CLI"),
       ),
       WorkflowStep.Run(
         List(s"ls -l $cliArtifacts"),
@@ -147,7 +157,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
       //   name = Some("Create Release"),
       //   params = Map(
       //     "draft" -> "true",
-      //     "files" -> githubOSes.map { case (_, short) => cliPath(short, cliNameNoSuffix) }.mkString("\n"),
+      //     "files" -> githubOSes.map { case (_, short) => cliPath(short, cliNameNoSuffix) ++ ".tar.gz" }.mkString("\n"),
       //     "fail_on_unmatched_files" -> "true",
       //   ),
       // ),

@@ -192,9 +192,15 @@ jobs:
           files: |
             cli/artifacts/find-unused-linux
             cli/artifacts/find-unused-linux-arm
-            cli/artifacts/find-unused-mac
-            cli/artifacts/find-unused-mac-arm
             cli/artifacts/find-unused-windows.exe
+
+      - name: Compress CLI
+        run: |
+          tar -cvzf cli/artifacts/find-unused-linux.tar.gz cli/artifacts/find-unused-linux
+          tar -cvzf cli/artifacts/find-unused-linux-arm.tar.gz cli/artifacts/find-unused-linux-arm
+          tar -cvzf cli/artifacts/find-unused-mac.tar.gz cli/artifacts/find-unused-mac
+          tar -cvzf cli/artifacts/find-unused-mac-arm.tar.gz cli/artifacts/find-unused-mac-arm
+          tar -cvzf cli/artifacts/find-unused-windows.exe.tar.gz cli/artifacts/find-unused-windows.exe
 
       - name: List post-compression
         run: ls -l cli/artifacts/
