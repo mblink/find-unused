@@ -12,10 +12,10 @@ ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 val java21 = JavaSpec.graalvm(Graalvm.Distribution("graalvm"), "21")
 val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
 
+val isTag = "startsWith(github.ref, 'refs/tags/v')"
+
 val cliAssemblyJarNameEnv = "FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME"
 val cliAssemblyJarNameSimple = "find-unused-assembly.jar"
-
-val isTag = "startsWith(github.ref, 'refs/tags/v')"
 
 val cliArtifacts = "cli/artifacts/"
 
@@ -33,7 +33,7 @@ ThisBuild / githubWorkflowPermissions := Some(Permissions.Specify(Map(
 ThisBuild / githubWorkflowJavaVersions := javaVersions
 ThisBuild / githubWorkflowArtifactUpload := false
 ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
-ThisBuild / githubWorkflowTargetBranches := Seq("main", "cli-assembly")
+ThisBuild / githubWorkflowTargetBranches := Seq("main")
 ThisBuild / githubWorkflowTargetTags := Seq("v*")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 

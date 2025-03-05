@@ -9,9 +9,9 @@ name: Continuous Integration
 
 on:
   pull_request:
-    branches: [main, cli-assembly]
+    branches: [main]
   push:
-    branches: [main, cli-assembly]
+    branches: [main]
     tags: [v*]
 
 permissions:
