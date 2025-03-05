@@ -102,15 +102,15 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
     } ++
     List(
       WorkflowStep.Run(List(s"ls -l $cliArtifacts"), name = Some("List artifacts")),
-      // WorkflowStep.Use(
-      //   ref = UseRef.Public("softprops", "action-gh-release", "v2"),
-      //   name = Some("Create Release"),
-      //   params = Map(
-      //     "draft" -> "true",
-      //     "files" -> githubOSes.map { case (_, short) => cliPath(short) }.mkString("\n"),
-      //     "fail_on_unmatched_files" -> "true",
-      //   ),
-      // )
+      WorkflowStep.Use(
+        ref = UseRef.Public("softprops", "action-gh-release", "v2"),
+        name = Some("Create Release"),
+        params = Map(
+          "draft" -> "true",
+          "files" -> githubOSes.map { case (_, short) => cliPath(short) }.mkString("\n"),
+          "fail_on_unmatched_files" -> "true",
+        ),
+      ),
     )
 )
 

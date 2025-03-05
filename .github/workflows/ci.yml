@@ -181,3 +181,15 @@ jobs:
 
       - name: List artifacts
         run: ls -l cli/artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            cli/artifacts/find-unused-linux
+            cli/artifacts/find-unused-linux-arm
+            cli/artifacts/find-unused-mac
+            cli/artifacts/find-unused-mac-arm
+            cli/artifacts/find-unused-windows.exe
+          fail_on_unmatched_files: true
