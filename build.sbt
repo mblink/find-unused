@@ -178,7 +178,6 @@ lazy val plugin = project.in(file("plugin"))
     scriptedBufferLog := false,
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
     libraryDependencies ++= Seq(
-      "dev.dirs" % "directories" % "26",
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),
     ),
