@@ -4,7 +4,7 @@ import coursier.Fetch
 import coursier.core.*
 import coursier.maven.MavenRepository
 import dev.dirs.BaseDirectories
-import java.io.FileOutputStream
+import java.io.{FileOutputStream, PrintWriter, StringWriter}
 import java.net.URI
 import java.nio.channels.Channels
 import sbt.*
@@ -72,25 +72,44 @@ object FindUnusedPlugin extends AutoPlugin {
   )
 
   // https://stackoverflow.com/a/39868021/2163024
-  private def autoClose[A <: AutoCloseable, B](a: A)(f: A => B): B = {
+  private def autoClose0[A <: AutoCloseable, B](a: A)(f: A => B): B = {
     var err: Throwable = null
     try { f(a) }
     catch {
       case t: Throwable =>
         err = t
-        throw t
+        err.printStackTrace()
+        throw err
     } finally {
       if (err != null)
         try { a.close() }
         catch {
           case t: Throwable =>
             err.addSuppressed(t)
-            throw t
+            err.printStackTrace()
+            throw err
         }
       else
         a.close()
     }
   }
+
+  private def runLogged[A](log: Logger, f: () => A): A =
+    scala.util.Try(f()).fold(
+      e => {
+        autoClose0(new StringWriter())(sw =>
+          autoClose0(new PrintWriter(sw)) { pw =>
+            e.printStackTrace(pw)
+            log.error(sw.toString)
+          }
+        )
+        throw e
+      },
+      identity,
+    )
+
+  private def autoClose[A <: AutoCloseable, B](log: Logger, get: () => A)(f: A => B): B =
+    autoClose0(runLogged(log, get))(f)
 
   private def sysProp(name: String): Option[String] = Option(System.getProperty(name)).map(_.toLowerCase)
 
@@ -105,7 +124,7 @@ object FindUnusedPlugin extends AutoPlugin {
     log.info("Fetching find-unused CLI with coursier")
     val dep = Dependency(Module(Organization("bondlink"), ModuleName("find-unused-cli_3"), Map.empty), BuildInfo.version)
     val repos = Seq(MavenRepository("https://raw.githubusercontent.com/mblink/maven-repo/main"))
-    val cp = Fetch().withRepositories(repos).addDependencies(dep).run()
+    val cp = runLogged(log, () => Fetch().withRepositories(repos).addDependencies(dep).run())
     CliClasspath(cp)
   }
 
@@ -134,15 +153,15 @@ object FindUnusedPlugin extends AutoPlugin {
 
           binDir.mkdirs
 
-          autoClose(Channels.newChannel(new URI(url).toURL.openStream))(channel =>
-            autoClose(new FileOutputStream(binPathTgz))(output =>
+          autoClose(log, () => Channels.newChannel(new URI(url).toURL.openStream))(channel =>
+            autoClose(log, () => new FileOutputStream(binPathTgz))(output =>
               output.getChannel.transferFrom(channel, 0, Long.MaxValue)
             )
           )
 
           log.info(s"Extracting $binPathTgz to $binPath")
 
-          Seq("tar", "-xzf", s"$bin.tar.gz").! match {
+          Process(Seq("tar", "-xzf", s"$bin.tar.gz"), cwd = Some(binDir)).! match {
             case 0 => ()
             case code => throw new MessageOnlyException(s"Failed to extract binary (exit code $code)")
           }
@@ -243,7 +262,7 @@ object FindUnusedPlugin extends AutoPlugin {
   private lazy val findUnusedGivensTask = Def.task {
     val exitCode = findUnusedCommandOptions.value match {
       case (CliBinary(cliBinary), cliOpts) =>
-        (cliBinary.toString +: cliOpts).!
+        (cliBinary.toString +: "givens" +: cliOpts).!
 
       case (CliClasspath(cliClasspath), cliOpts) =>
         val forkOpts = ForkOptions()
