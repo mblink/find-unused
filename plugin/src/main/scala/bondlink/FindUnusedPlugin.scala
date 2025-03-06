@@ -3,7 +3,7 @@ package bondlink
 import coursier.Fetch
 import coursier.core.*
 import coursier.maven.MavenRepository
-import java.io.{File, PrintWriter, StringWriter}
+import java.io.{PrintWriter, StringWriter}
 import sbt.*
 import sbt.internal.util.complete.*
 import sbt.internal.util.complete.Parsers.*
@@ -202,23 +202,7 @@ object FindUnusedPlugin extends AutoPlugin {
 
       log.debug(s"Running find-unused with arguments: ${javaOpts.mkString(" ")}")
 
-      // sbt's Fork writes arguments to a file if they're too long, but it doesn't handle double quotes (i.e. JSON)
-      // well, so we need to do it ourselves -- https://github.com/sbt/sbt/issues/7129
-      val file = File.createTempFile(s"find-unused-args", ".tmp")
-      file.deleteOnExit()
-
-      val pw = new PrintWriter(file)
-      val quoteRegex = """([^\\])"""".r
-      javaOpts.foreach { o =>
-        pw.write("\"")
-        pw.write(quoteRegex.replaceAllIn(o.replace("\\", "\\\\"), """$1\\""""))
-        pw.write("\"")
-        pw.write(System.lineSeparator())
-      }
-      pw.flush()
-      pw.close()
-
-      Seq(s"@${file.getAbsolutePath}")
+      javaOpts
     })
   }
 
