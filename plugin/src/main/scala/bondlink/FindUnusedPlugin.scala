@@ -3,7 +3,7 @@ package bondlink
 import coursier.Fetch
 import coursier.core.*
 import coursier.maven.MavenRepository
-import java.io.{PrintWriter, StringWriter}
+import java.io.{File, PrintWriter, StringWriter}
 import sbt.*
 import sbt.internal.util.complete.*
 import sbt.internal.util.complete.Parsers.*
@@ -18,7 +18,7 @@ object FindUnusedPlugin extends AutoPlugin {
 
     val findUnusedCliClasspath = taskKey[Seq[File]]("Find unused CLI classpath")
 
-    val findUnusedCommandOptions = taskKey[(ForkOptions, Seq[String], Seq[String])]("Find unused command options")
+    val findUnusedCommandOptions = taskKey[(ForkOptions, String => Seq[String])]("Find unused command options")
 
     val findUnusedUseLocalClasspath = settingKey[Boolean]("Find unused use local classpath")
 
@@ -156,6 +156,7 @@ object FindUnusedPlugin extends AutoPlugin {
   }
 
   private lazy val findUnusedCommandOptionsTask = Def.task {
+    val log = streams.value.log
     val forkOpts = ForkOptions()
       .withJavaHome(javaHome.value)
       .withOutputStrategy(outputStrategy.value)
@@ -164,7 +165,7 @@ object FindUnusedPlugin extends AutoPlugin {
 
     val cliClasspath = findUnusedCliClasspath.value
     val mainClass = "bondlink.FindUnusedCli"
-    val scalaOpts = List("-classpath", Path.makeString(cliClasspath), mainClass)
+    val baseJavaOpts = List("-cp", Path.makeString(cliClasspath), mainClass)
 
     @annotation.tailrec
     def runCommand(command: String, state: State): State = {
@@ -187,15 +188,44 @@ object FindUnusedPlugin extends AutoPlugin {
     val projClasspath = state.attributes(findUnusedClasspathKey)
     val projPackages = findUnusedPackages.value
 
-    val cliOpts = projClasspath.flatMap(Seq("-c", _)) ++ projPackages.flatMap(Seq("-p", _))
+    val rootDir = (ThisBuild / baseDirectory).value.toString
 
-    (forkOpts, scalaOpts, cliOpts)
+    (forkOpts, (cmd: String) => {
+      val javaOpts = baseJavaOpts ++
+        Seq(
+          cmd,
+          "--root-directory",
+          rootDir,
+        ) ++
+        projPackages.flatMap(Seq("--package", _)) ++
+        projClasspath.flatMap(Seq("--classpath", _))
+
+      log.debug(s"Running find-unused with arguments: ${javaOpts.mkString(" ")}")
+
+      // sbt's Fork writes arguments to a file if they're too long, but it doesn't handle double quotes (i.e. JSON)
+      // well, so we need to do it ourselves -- https://github.com/sbt/sbt/issues/7129
+      val file = File.createTempFile(s"find-unused-args", ".tmp")
+      file.deleteOnExit()
+
+      val pw = new PrintWriter(file)
+      val quoteRegex = """([^\\])"""".r
+      javaOpts.foreach { o =>
+        pw.write("\"")
+        pw.write(quoteRegex.replaceAllIn(o.replace("\\", "\\\\"), """$1\\""""))
+        pw.write("\"")
+        pw.write(System.lineSeparator())
+      }
+      pw.flush()
+      pw.close()
+
+      Seq(s"@${file.getAbsolutePath}")
+    })
   }
 
   private lazy val findUnusedGivensTask = Def.task {
-    val (forkOpts, scalaOpts, cliOpts) = findUnusedCommandOptions.value
+    val (forkOpts, javaOpts) = findUnusedCommandOptions.value
 
-    Fork.java.fork(forkOpts, scalaOpts ++ List("givens") ++ cliOpts).exitValue() match {
+    Fork.java.fork(forkOpts, javaOpts("givens")).exitValue() match {
       case 0 => ()
       case 1 => throw new MessageOnlyException("findUnusedGivens failed, see output above")
     }

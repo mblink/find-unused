@@ -14,10 +14,11 @@ object FindUnusedCli {
 
   @main
   def givens(
+    @arg(short = 'd', doc = "Root directory of project") rootDirectory: Option[String],
     @arg(short = 'p', doc = "Packages to analyze") `package`: Seq[String],
     @arg(short = 'c', doc = "Classpath") classpath: Seq[String],
   ): Unit = {
-    val givens = FindUnusedGivens.all(`package`, classpath.distinct.map(Paths.get(_)))
+    val givens = FindUnusedGivens.all(rootDirectory.map(Paths.get(_)), `package`, classpath.distinct.map(Paths.get(_)))
     val unused = givens.defined
       .filterNot((code, _) => givens.used.contains(code))
       .toList

@@ -13,15 +13,25 @@ import tastyquery.Types.*
 import tastyquery.jdk.ClasspathLoaders
 
 object FindUnusedGivens {
-  def all(pkgs: Seq[String], classpath: Seq[Path]): Givens = {
-    given ctx: Context = Context.initialize(ClasspathLoaders.read(
+  def all(rootDirectory: Option[Path], pkgs: Seq[String], classpath: Seq[Path]): Givens = {
+    println("[find-unused] Initializing classpath")
+
+    // `implicit val` instead of `given` so it's initialized eagerly
+    implicit val ctx: Context = Context.initialize(ClasspathLoaders.read(
       FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules", "java.base") :: classpath.toList
     ))
 
-    pkgs.foldMap(p => symGivens(ctx.findPackage(p))).run(Env(false, Set.empty))
+    pkgs.foldMap { p =>
+      println(s"[find-unused] Analyzing package $p")
+      symGivens(ctx.findPackage(p)).run(Env(rootDirectory, false, Set.empty))
+    }
   }
 
-  case class Env(log: Boolean, seenSymbols: Set[Int])
+  case class Env(
+    rootDirectory: Option[Path],
+    log: Boolean,
+    seenSymbols: Set[Int],
+  )
 
   case class Givens(
     defined: Map[Int, (String, Option[String])],
@@ -41,14 +51,15 @@ object FindUnusedGivens {
         case None => sym.displayFullName
       }
 
-    // TODO - sourceFile is relative, can we get an absolute path?
-    private def formatPos(pos: SourcePosition): String =
-      if (pos.hasLineColumnInformation) s"${pos.sourceFile}:${pos.pointLine + 1}:${pos.pointColumn + 1}"
-      else pos.toString
+    private def formatPos(rootDirectory: Option[Path], pos: SourcePosition): String =
+      rootDirectory.fold("")(_.toString ++ "/") ++ (
+        if (pos.hasLineColumnInformation) s"${pos.sourceFile}:${pos.pointLine + 1}:${pos.pointColumn + 1}"
+        else pos.toString
+      )
 
-    def defined(sym: TermSymbol)(using ctx: Context): Givens =
+    def defined(rootDirectory: Option[Path])(sym: TermSymbol)(using ctx: Context): Givens =
       Givens(
-        defined = Map(sym.hashCode -> (symName(sym), sym.tree.map(t => formatPos(t.pos)))),
+        defined = Map(sym.hashCode -> (symName(sym), sym.tree.map(t => formatPos(rootDirectory, t.pos)))),
         // If a symbol overrides another, consider it used
         // This accounts for cases where a `given` is used in a parent class, but not in the subclass
         used = sym.nextOverriddenSymbol.fold(Set.empty)(_ => Set(sym.hashCode)),
@@ -169,7 +180,7 @@ object FindUnusedGivens {
         sym match {
           case t: TermSymbol =>
             if (updEnv.log) println(s"*********** TermSymbol ${t.name}")
-            (Givens.fromTermSymbol(t, Givens.defined).pure[ResF] |+| t.tree.fold(empty)(treeGivens)).run(updEnv)
+            (Givens.fromTermSymbol(t, Givens.defined(updEnv.rootDirectory)).pure[ResF] |+| t.tree.fold(empty)(treeGivens)).run(updEnv)
           case p: PackageSymbol =>
             if (updEnv.log) println(s"*********** PackageSymbol ${p.name}")
             p.declarations.foldMap(symGivens).run(updEnv)
