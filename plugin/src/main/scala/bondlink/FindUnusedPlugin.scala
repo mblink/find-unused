@@ -189,6 +189,7 @@ object FindUnusedPlugin extends AutoPlugin {
     val projPackages = findUnusedPackages.value
 
     val rootDir = (ThisBuild / baseDirectory).value.toString
+    val termWidth = terminal.value.getWidth
 
     (forkOpts, (cmd: String) => {
       val javaOpts = baseJavaOpts ++
@@ -196,6 +197,8 @@ object FindUnusedPlugin extends AutoPlugin {
           cmd,
           "--root-directory",
           rootDir,
+          "--width",
+          termWidth.toString,
         ) ++
         projPackages.flatMap(Seq("--package", _)) ++
         projClasspath.flatMap(Seq("--classpath", _))
