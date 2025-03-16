@@ -1,6 +1,5 @@
 package bl.unused
 
-import cats.data.Reader
 import cats.syntax.either.*
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
@@ -186,7 +185,7 @@ object Symbols {
     )
 
   def references(sym: Symbol)(using ctx: Context): EnvR[References] =
-    Reader { env =>
+    EnvR { env =>
       if (env.seenSymbols.contains(sym.hashCode)) References.empty.run(env)
       else {
         val updEnv = env.copy(seenSymbols = env.seenSymbols + sym.hashCode)

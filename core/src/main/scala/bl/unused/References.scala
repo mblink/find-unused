@@ -1,7 +1,6 @@
 package bl.unused
 
-import cats.{Id, Monoid}
-import cats.data.{Kleisli, Reader}
+import cats.Monoid
 import cats.syntax.applicative.*
 import cats.syntax.semigroup.*
 import tastyquery.Contexts.Context
@@ -16,10 +15,10 @@ object References {
   given monoid: Monoid[References] =
     Monoid.instance(References(Map.empty, Set.empty), (x, y) => References(x.defined ++ y.defined, x.used ++ y.used))
 
-  lazy val empty: EnvR[References] = Reader(_ => monoid.empty)
+  lazy val empty: EnvR[References] = EnvR(_ => monoid.empty)
 
   def defined(sym: Symbol)(using ctx: Context): EnvR[References] =
-    Reader { env =>
+    EnvR { env =>
       References(
         defined = Map(sym.hashCode -> (Symbols.name(sym), sym.tree.map(t => Positions.format(env.rootDirectory, t.pos)))),
         used = sym match {
@@ -35,7 +34,7 @@ object References {
     References(Map.empty, Set(sym.hashCode)).pure[EnvR]
 
   def fromSymbol(sym: Symbol, mk: Symbol => EnvR[References])(using ctx: Context): EnvR[References] = {
-    Kleisli.ask[Id, Env].flatMap { env =>
+    EnvR.env.flatMap { env =>
       if (env.symbolIsValid(sym))
         sym match {
           case _: PackageSymbol => empty
