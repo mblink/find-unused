@@ -10,26 +10,28 @@ import tastyquery.Types.*
 import tastyquery.Symbols.*
 
 object Symbols {
-  val isSynthetic: Symbol => Boolean = {
-    case s: TermOrTypeSymbol => s.isSynthetic
-    case _ => false
-  }
+  def isSynthetic(sym: Symbol): Boolean =
+    sym match {
+      case s: TermOrTypeSymbol => s.isSynthetic
+      case _ => false
+    }
 
-  val isConstructor: Symbol => Boolean = _.name == nme.Constructor
+  def isConstructor(sym: Symbol): Boolean = sym.name == nme.Constructor
 
-  val isDefaultParam: Symbol => Boolean = {
-    case t: TermSymbol => t.isParamWithDefault
-    case _ => false
-  }
+  def isDefaultParam(sym: Symbol): Boolean =
+    sym match {
+      case t: TermSymbol => t.isParamWithDefault
+      case _ => false
+    }
 
-  val isGiven: Symbol => Boolean = {
-    case s: TermSymbol => s.isGivenOrUsing || s.isImplicit
-    case _ => false
-  }
+  def isGiven(sym: Symbol): Boolean =
+    sym match {
+      case t: TermSymbol => t.isGivenOrUsing || t.isImplicit
+      case _ => false
+    }
 
-  val defaultIsValidChecks = List(isSynthetic, isConstructor, isDefaultParam)
-
-  val defaultIsValid: Symbol => Boolean = s => defaultIsValidChecks.forall(f => !f(s))
+  def defaultIsValid(sym: Symbol): Boolean =
+    !isSynthetic(sym) && !isConstructor(sym) && !isDefaultParam(sym)
 
   def name(sym: Symbol): String =
     (Option(sym.owner) match {
@@ -60,7 +62,7 @@ object Symbols {
     |  isDefaultParam: ${isDefaultParam(sym)}
     |  isGiven: ${isGiven(sym)}
     |  isParamAccessor: ${Some(sym).collect { case t: TermSymbol => t.isParamAccessor }.getOrElse(false)}
-    |""".stripMargin.split("\n").map(spaces ++ _).mkString("\n")
+    |""".stripMargin.replace("\n", s"\n$spaces")
   }
 
   def debug(message: String, sym: Symbol, onlyIf: String => Boolean)(using ctx: Context): Unit =
@@ -85,19 +87,26 @@ object Symbols {
     go(Set.empty, sym) + sym
   }
 
-  /** Find all symbols matching `name` in this `klass` and it's parent classes */
+  /** Find all symbols matching `name` in this `klass` and its parent classes */
   def getFromClasses(klass: ClassSymbol, name: Name)(using ctx: Context): Set[Symbol] =
     klass.linearization
       .flatMap(c => c.getMember(name).toList ++ c.declarations.filter(_.name == name))
       .toSet
 
-  /** Find all symbols matching the given `ident` */
+  /** Find all symbols matching the given `Ident`
+   *
+   * tasty-query sometimes throws an error on `Ident#symbol`, in which case we fall back to looking at `Ident#referenceType`.
+   * If that's a `TermRef`, we look at its `prefix` in an attempt to identify the `ClassSymbol` that owns the `Ident`.
+   * If we find a `ClassSymbol`, we look in it and its parent classes for all symbols with the same name as the `Ident`.
+   */
   def getFromIdent(ident: Ident)(using ctx: Context): Set[Symbol] =
     Either.catchNonFatal(Set(ident.symbol)).getOrElse(
       ident.referenceType match {
         case t: TermRef =>
           t.prefix match {
             case t: ThisType => getFromClasses(t.cls, ident.name)
+            // If a `TermRef` is a module val (the singleton instance of an `object`),
+            // look at the corresponding module class (the `object` itself)
             case t: TermRef if t.symbol.isModuleVal => t.symbol.moduleClass.fold(Set.empty)(getFromClasses(_, ident.name))
             case _ => Set.empty
           }
@@ -112,19 +121,32 @@ object Symbols {
     f
   }
 
-  def getSelectOwner(sel: Select): Option[TypeRef] =
+  private def getSelectOwner(sel: Select): Option[TypeRef] =
     selectOwnerField.get(sel) match {
       case o: Option[?] => o.collect { case t: TypeRef => t }
       case _ => None
     }
 
-  def getFromSelectOwner(sel: Select)(using ctx: Context): Set[Symbol] =
+  /** Find all symbols matching the given `Select` by looking at the `selectOwner`
+   *
+   * Unfortunately `selectOwner` is private so we need to use java reflection to get it -- see `getSelectOwner` above.
+   *
+   * If there is a `selectOwner`, we attempt to get its symbol, check if it's a `ClassSymbol`, and then use that
+   * `ClassSymbol` to find symbols with names matching the name of the `Select`.
+   */
+  private def getFromSelectOwner(sel: Select)(using ctx: Context): Set[Symbol] =
     getSelectOwner(sel)
       .flatMap(_.optSymbol)
       .collect { case c: ClassSymbol => c }
-      .fold(Set.empty)(Symbols.getFromClasses(_, sel.name))
+      .fold(Set.empty)(getFromClasses(_, sel.name))
 
-  def getFromSelectApply(sel: Select)(using ctx: Context): Set[Symbol] =
+  /** Find all symbols matching the given `Select` by checking if its `qualifier` is an `Apply`
+   *
+   * If it is an `Apply`, we get the result type of the method call it represents, attempt to get the symbol of
+   * that type, check if it's a `ClassSymbol`, and then use that `ClassSymbol` to find symbols with names matching
+   * the name of the `Select`.
+   */
+  private def getFromSelectApply(sel: Select)(using ctx: Context): Set[Symbol] =
     Some(sel.qualifier)
       .collect { case a: Apply => a.methodType.resultType }
       .flatMap {
@@ -137,8 +159,15 @@ object Symbols {
         case _ => None
       }
       .collect { case c: ClassSymbol => c }
-      .fold(Set.empty)(Symbols.getFromClasses(_, sel.name))
+      .fold(Set.empty)(getFromClasses(_, sel.name))
 
+  /** Find all symbols matching the given `Select`
+   *
+   * tasty-query sometimes throws an error on `Select#symbol`, in which case we fall back to two approaches:
+   *
+   *   1. Checking `Select#selectOwner` -- see `getFromSelectOwner` above
+   *   2. Checking if the `qualifier` of the `Select` is an `Apply -- see `getFromSelectApply` above
+   */
   def getFromSelect(sel: Select)(using ctx: Context): Set[Symbol] =
     Either.catchNonFatal(Set(sel.symbol)).getOrElse(
       Set(
@@ -147,18 +176,49 @@ object Symbols {
       ).flatMap(f => Either.catchNonFatal(f(sel)).toOption.getOrElse(Set.empty))
     )
 
+  /** Get the first symbol the given `TermOrTypeSymbol` overrides, if any
+   *
+   * tasty-query has a built-in `TermOrTypeSymbol#nextOverriddenSymbol` method, but it sometimes returns `None` unexpectedly
+   * We first try calling that, and then perform our fallback logic.
+   *
+   * If the given `sym` meets all of these criteria:
+   *
+   *   1. It belongs to a `ClassSymbol`
+   *   2. It is not a constructor method
+   *   3. It is not private
+   *   4. It is a method
+   *
+   * then we check the parent classes of the symbol's owner. For each one, we get method declarations with names
+   * matching the name of the symbol, and look for the first one where both of the following are true:
+   *
+   *   1. The method's parameter types match the parameter types of the method represented by `sym`
+   *   2. The method's result type matches the result type of the method represented by `sym`
+   *
+   * This logic is cobbled together from a handful of methods in tasty-query.
+   *
+   * TermOrTypeSymbol#nextOverriddenSymbol, which calls TermOrTypeSymbol#allOverriddenSymbols,
+   * which calls TermOrTypeSymbol#overriddenSymbol, which calls TermOrTypeSymbol#matchingDecl.
+   *
+   * For TermSymbols, matchingDecl performs a check against the parent class similar to what we do, but it uses
+   * `candidateType.matches(targetType)`, which returns `false` for some overridden methods.
+   *
+   * This is the ultimate problem we're working around. For some reason, both the parameter and result types match,
+   * but the overall type of the methods don't match.
+   */
   def nextOverriddenSymbol(sym: TermOrTypeSymbol)(using ctx: Context): Option[TermOrTypeSymbol] =
     sym.nextOverriddenSymbol.orElse(
       sym match {
-        case t: TermSymbol if t.owner.isClass && !Symbols.isConstructor(t) && !t.isPrivate =>
+        case t: TermSymbol if t.owner.isClass && !isConstructor(t) && !t.isPrivate =>
           val ownerClass = t.owner.asClass
-          val overrides = ownerClass.linearization.drop(1).iterator.flatMap { inClass =>
-            val candidates = inClass.getAllOverloadedDecls(t.name).filterNot(_.isPrivate)
-            val site = ownerClass.thisType
-            t.typeAsSeenFrom(site) match {
-              case targetType: MethodType =>
+          val ownerType = ownerClass.thisType
+
+          t.typeAsSeenFrom(ownerType) match {
+            case targetType: MethodType =>
+              ownerClass.linearization.drop(1).collectFirst(Function.unlift { parentClass =>
+                val candidates = parentClass.getAllOverloadedDecls(t.name).filterNot(_.isPrivate)
+
                 candidates.find { candidate =>
-                  candidate.typeAsSeenFrom(site) match {
+                  candidate.typeAsSeenFrom(ownerType) match {
                     case candidateType: MethodType =>
                       val paramsMatch = (candidateType.paramTypes, targetType.paramTypes) match {
                         case (candidateParams, targetParams) if candidateParams.length == targetParams.length =>
@@ -173,11 +233,10 @@ object Symbols {
                     case _ => false
                   }
                 }
+              })
 
-              case _ => None
-            }
+            case _ => None
           }
-          if (overrides.hasNext) Some(overrides.next) else None
 
         case _ =>
           None
@@ -193,11 +252,11 @@ object Symbols {
         (Annotations.checkForUnused(sym) |+| (sym match {
           // Don't analyze module vals, they cause objects to always appear used
           case t: TermSymbol if t.isModuleVal =>
-            if (updEnv.debug) println(s"*********** TermSymbol (module val): ${Symbols.name(t)}")
+            if (updEnv.debug) println(s"*********** TermSymbol (module val): ${name(t)}")
             References.empty
 
           case t: TermSymbol =>
-            if (updEnv.debug) println(s"*********** TermSymbol: ${Symbols.name(t)}")
+            if (updEnv.debug) println(s"*********** TermSymbol: ${name(t)}")
             // Don't count default params as definitions
             (t.name match {
               case _: DefaultGetterName => References.empty
@@ -208,11 +267,11 @@ object Symbols {
               t.tree.fold(References.empty)(Trees.references)
 
           case p: PackageSymbol =>
-            if (updEnv.debug) println(s"*********** PackageSymbol: ${Symbols.name(p)}")
+            if (updEnv.debug) println(s"*********** PackageSymbol: ${name(p)}")
             p.declarations.foldMap(references)
 
           case c: ClassSymbol =>
-            if (updEnv.debug) println(s"*********** ClassSymbol: ${Symbols.name(c)}, decls: ${c.declarations}")
+            if (updEnv.debug) println(s"*********** ClassSymbol: ${name(c)}, decls: ${c.declarations}")
             (c.name match {
               case tpnme.RefinedClassMagic => References.empty
               case _ => References.fromSymbol(c, References.defined)
