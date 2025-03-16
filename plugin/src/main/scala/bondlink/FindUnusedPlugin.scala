@@ -1,4 +1,4 @@
-package bondlink
+package bl.unused
 
 import coursier.Fetch
 import coursier.core.*
@@ -198,7 +198,7 @@ object FindUnusedPlugin extends AutoPlugin {
       .withRunJVMOptions((findUnused / javaOptions).value.toVector)
 
     val cliClasspath = findUnusedCliClasspath.value
-    val mainClass = "bondlink.FindUnusedCli"
+    val mainClass = "bl.unused.FindUnusedCli"
     val baseJavaOpts = List("-cp", Path.makeString(cliClasspath), mainClass)
 
     @annotation.tailrec

@@ -150,7 +150,7 @@ lazy val cli = project.in(file("cli"))
     ),
     run / fork := true,
     assembly / aggregate := false,
-    assembly / mainClass := Some("bondlink.FindUnusedCli"),
+    assembly / mainClass := Some("bl.unused.FindUnusedCli"),
   )
   .settings(sys.env.get(cliAssemblyJarNameEnv) match {
     case Some(name) => Seq(assembly / assemblyJarName := name)
@@ -183,6 +183,6 @@ lazy val plugin = project.in(file("plugin"))
     ),
     cliClasspath := (cli / Runtime / fullClasspath).value.map(_.data),
     buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
-    buildInfoPackage := "bondlink",
+    buildInfoPackage := "bl.unused",
   )
   .enablePlugins(SbtPlugin, BuildInfoPlugin)
