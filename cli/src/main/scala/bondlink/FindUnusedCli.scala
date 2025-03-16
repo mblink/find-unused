@@ -92,7 +92,7 @@ object FindUnusedCli {
     )
 
     if (args.debug.value)
-      println(s"*********** Result: ${pprint(refs)}")
+      println(s"*********** Result: ${Debug.printer(refs)}")
 
     val unused = refs.defined
       .filterNot((code, _) => refs.used.contains(code))

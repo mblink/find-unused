@@ -34,7 +34,7 @@ object Trees {
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     Kleisli.ask[Id, Env].flatMap { env =>
-      if (env.debug) println(s"************* tree: ${pprint(tree)}")
+      if (env.debug) println(s"************* tree: ${Debug.printer(tree)}")
       tree match {
         case Alternative(trees) => referencesL(trees)
         case AnnotatedTypeTree(tpt, annotation) => references(tpt) |+| references(annotation)
@@ -108,7 +108,8 @@ object Trees {
         case t @ TypeWrapper(_) => Types.prefixReferences(t.toPrefix)
         // TODO - should implicits be added to References#used?
         case Unapply(fun, implicits, patterns) => references(fun) |+| referencesL(implicits) |+| referencesL(patterns)
-        case ValDef(_, tpt, rhs, symbol) => references(tpt) |+| referencesO(rhs) |+| Annotations.checkForUnused(symbol)
+        case ValDef(_, tpt, rhs, symbol) =>
+          references(tpt) |+| referencesO(rhs) |+| Annotations.checkForUnused(symbol)
         case While(cond, body) => references(cond) |+| references(body)
         case WildcardPattern(_) => References.empty
         case WildcardTypeArgTree(bounds) => references(bounds)
