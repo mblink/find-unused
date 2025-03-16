@@ -9,6 +9,7 @@ import sbt.internal.util.complete.*
 import sbt.internal.util.complete.Parsers.*
 import sbt.Keys.*
 import sbt.plugins.JvmPlugin
+import scala.util.matching.Regex
 
 object FindUnusedPlugin extends AutoPlugin {
   object autoImport {
@@ -20,7 +21,7 @@ object FindUnusedPlugin extends AutoPlugin {
 
     val findUnusedCommandOptions = taskKey[(ForkOptions, String => Seq[String])]("Find unused command options")
 
-    val findUnusedUseLocalClasspath = settingKey[Boolean]("Find unused use local classpath")
+    val findUnusedUseLocalClasspath = settingKey[Boolean]("Whether to use the local classpath for find-unused")
 
     val findUnusedProjectsKey: AttributeKey[Seq[ProjectRef]] = AttributeKey("findUnusedProjectRefs")
 
@@ -29,9 +30,38 @@ object FindUnusedPlugin extends AutoPlugin {
     val findUnusedStoreProjectClasspaths =
       inputKey[StateTransform]("Store the full classpaths of all projects for a given Scala version")
 
-    val findUnusedPackages = taskKey[Seq[String]]("Packages to analyze with find unused")
+    val findUnusedDebug = settingKey[Boolean]("Whether to enable debug output for find-unused")
+
+    val findUnusedPackages = settingKey[Seq[String]]("Packages to analyze with find unused")
+
+    case class FindUnusedExclusion(
+      src: Option[Regex],
+      sym: Option[Regex],
+    ) {
+      final lazy val toArg: String = List(
+        "src" -> src,
+        "sym" -> sym,
+      ).flatMap { case (k, vo) => vo.map(v => s"$k=$v") }.mkString("&")
+    }
+
+    object FindUnusedExclusion {
+      def apply(src: Regex): FindUnusedExclusion =
+        new FindUnusedExclusion(src = Some(src), sym = None)
+
+      def apply(sym: Regex)(implicit d: DummyImplicit): FindUnusedExclusion =
+        new FindUnusedExclusion(src = None, sym = Some(sym))
+
+      def apply(src: Regex, sym: Regex): FindUnusedExclusion =
+        new FindUnusedExclusion(src = Some(src), sym = Some(sym))
+    }
+
+    val findUnusedExclusions = settingKey[Seq[FindUnusedExclusion]]("Find unused exclusions")
+
+    val findUnusedExplicits = taskKey[Unit]("Find unused explicits")
 
     val findUnusedGivens = taskKey[Unit]("Find unused givens")
+
+    val findUnusedAll = taskKey[Unit]("Find all unused terms")
   }
 
   import autoImport.*
@@ -52,8 +82,12 @@ object FindUnusedPlugin extends AutoPlugin {
     findUnusedCommandOptions := findUnusedCommandOptionsTask.value,
     findUnusedUseLocalClasspath := false,
     findUnusedStoreProjectClasspaths := findUnusedStoreProjectClasspathsTask.evaluated,
+    findUnusedDebug := false,
     findUnusedPackages := Seq.empty,
+    findUnusedExclusions := Seq.empty,
+    findUnusedExplicits := findUnusedExplicitsTask.value,
     findUnusedGivens := findUnusedGivensTask.value,
+    findUnusedAll := findUnusedAllTask.value,
     Keys.commands ++= commands,
   )
 
@@ -191,17 +225,23 @@ object FindUnusedPlugin extends AutoPlugin {
     val rootDir = (ThisBuild / baseDirectory).value.toString
     val termWidth = terminal.value.getWidth
 
+    val debug = findUnusedDebug.value
+
+    val exclusions = findUnusedExclusions.value
+
     (forkOpts, (cmd: String) => {
       val javaOpts = baseJavaOpts ++
+        Seq(cmd) ++
+        (if (debug) Seq("--debug") else Seq.empty) ++
         Seq(
-          cmd,
           "--root-directory",
           rootDir,
           "--width",
           termWidth.toString,
         ) ++
         projPackages.flatMap(Seq("--package", _)) ++
-        projClasspath.flatMap(Seq("--classpath", _))
+        projClasspath.flatMap(Seq("--classpath", _)) ++
+        exclusions.flatMap(e => Seq("--exclusion", e.toArg))
 
       log.debug(s"Running find-unused with arguments: ${javaOpts.mkString(" ")}")
 
@@ -209,12 +249,16 @@ object FindUnusedPlugin extends AutoPlugin {
     })
   }
 
-  private lazy val findUnusedGivensTask = Def.task {
+  private def findUnusedTask(cmd: String) = Def.task {
     val (forkOpts, javaOpts) = findUnusedCommandOptions.value
 
-    Fork.java.fork(forkOpts, javaOpts("givens")).exitValue() match {
+    Fork.java.fork(forkOpts, javaOpts(cmd)).exitValue() match {
       case 0 => ()
-      case 1 => throw new MessageOnlyException("findUnusedGivens failed, see output above")
+      case 1 => throw new MessageOnlyException("find-unused failed, see output above")
     }
   }
+
+  private lazy val findUnusedExplicitsTask = findUnusedTask("explicits")
+  private lazy val findUnusedGivensTask = findUnusedTask("givens")
+  private lazy val findUnusedAllTask = findUnusedTask("all")
 }
