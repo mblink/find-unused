@@ -132,6 +132,7 @@ object FindUnusedCli {
 
   @main def explicits(args: Args): Unit = run(FindUnused.explicits, args, "explicit")
   @main def givens(args: Args): Unit = run(FindUnused.givens, args, "given")
+  @main def implicits(args: Args): Unit = run(FindUnused.givens, args, "implicit")
   @main def all(args: Args): Unit = run(FindUnused.all, args, "term")
 
   def main(args: Array[String]): Unit =

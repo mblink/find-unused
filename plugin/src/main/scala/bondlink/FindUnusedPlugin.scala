@@ -61,6 +61,8 @@ object FindUnusedPlugin extends AutoPlugin {
 
     val findUnusedGivens = taskKey[Unit]("Find unused givens")
 
+    val findUnusedImplicits = taskKey[Unit]("Find unused implicits")
+
     val findUnusedAll = taskKey[Unit]("Find all unused terms")
   }
 
@@ -87,6 +89,7 @@ object FindUnusedPlugin extends AutoPlugin {
     findUnusedExclusions := Seq.empty,
     findUnusedExplicits := findUnusedExplicitsTask.value,
     findUnusedGivens := findUnusedGivensTask.value,
+    findUnusedImplicits := findUnusedGivensTask.value,
     findUnusedAll := findUnusedAllTask.value,
     Keys.commands ++= commands,
   )
