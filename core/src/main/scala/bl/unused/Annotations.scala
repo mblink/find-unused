@@ -12,17 +12,17 @@ import tastyquery.Symbols.*
 import tastyquery.Trees.*
 
 object Annotations {
-  class UnusedAnnotationSignature(name: String) {
+  private class UnusedAnnotationSignature(name: String) {
     final def unapply(tree: Tree): Option[List[TermTree]] =
       tree match {
         case Apply(Select(New(_), SignedName(_, Signature(_, sigName), _)), args) if name == sigName.toString => Some(args)
         case _ => None
       }
   }
-  object NowarnAnnotationSignature extends UnusedAnnotationSignature("scala.annotation.nowarn")
-  object UnusedAnnotationSignature extends UnusedAnnotationSignature("scala.annotation.unused")
+  private object NowarnAnnotationSignature extends UnusedAnnotationSignature("scala.annotation.nowarn")
+  private object UnusedAnnotationSignature extends UnusedAnnotationSignature("scala.annotation.unused")
 
-  object UnusedMsgFilter {
+  private object UnusedMsgFilter {
     private val checks = Set("unused", "never used")
 
     def unapply(tree: TermTree): Boolean =
@@ -36,7 +36,7 @@ object Annotations {
       }
   }
 
-  def isUnusedAnnotation(a: Annotation)(using ctx: Context): Boolean =
+  private def isUnusedAnnotation(a: Annotation)(using ctx: Context): Boolean =
     a.tree match {
       case UnusedAnnotationSignature(Nil) => true
       case NowarnAnnotationSignature(List(UnusedMsgFilter())) => true
@@ -73,6 +73,16 @@ object Annotations {
       .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
       .flatMap(_.collectFirst { case v if v.name == paramAccessor.name => v.symbol }) // v is a constructor param
 
+  /** Check the given Symbol for annotations that suppress unused warnings
+   *
+   * This includes two variants:
+   *
+   *   1. An annotation that's an instance of `scala.annotation.unused` annotation
+   *   2. An annotation that's an instance of `scala.annotation.nowarn` with a `msg` filter that mentions
+   *      "unused" or "never used"
+   *
+   * If a matching annotation is found, we consider the symbol used.
+   */
   def checkForUnused(sym: Symbol)(using ctx: Context): EnvR[References] = {
     // If the symbol is a class constructor parameter, attempt to find the corresponding param accessor in the class
     val paramAccessorSym = ctorParamToParamAccessor(sym)
