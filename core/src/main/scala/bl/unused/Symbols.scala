@@ -244,41 +244,42 @@ object Symbols {
     )
 
   def references(sym: Symbol)(using ctx: Context): EnvR[References] =
-    EnvR { env =>
-      if (env.seenSymbols.contains(sym.hashCode)) References.empty.run(env)
-      else {
-        val updEnv = env.copy(seenSymbols = env.seenSymbols + sym.hashCode)
+    EnvR.hasSeenSymbol(sym).flatMap(seen =>
+      if (seen) References.empty
+      else
+        for {
+          _ <- EnvR.addSeenSymbol(sym)
+          debug <- EnvR.debug
+          res <- Annotations.checkForUnused(sym) |+| (sym match {
+            // Don't analyze module vals, they cause objects to always appear used
+            case t: TermSymbol if t.isModuleVal =>
+              if (debug) println(s"*********** TermSymbol (module val): ${name(t)}")
+              References.empty
 
-        (Annotations.checkForUnused(sym) |+| (sym match {
-          // Don't analyze module vals, they cause objects to always appear used
-          case t: TermSymbol if t.isModuleVal =>
-            if (updEnv.debug) println(s"*********** TermSymbol (module val): ${name(t)}")
-            References.empty
+            case t: TermSymbol =>
+              if (debug) println(s"*********** TermSymbol: ${name(t)}")
+              // Don't count default params as definitions
+              (t.name match {
+                case _: DefaultGetterName => References.empty
+                case _ => References.fromSymbol(t, References.defined)
+              }) |+|
+                // Consider abstract members used
+                (if (t.isAbstractMember) References.fromSymbol(t, References.used) else References.empty) |+|
+                t.tree.fold(References.empty)(Trees.references)
 
-          case t: TermSymbol =>
-            if (updEnv.debug) println(s"*********** TermSymbol: ${name(t)}")
-            // Don't count default params as definitions
-            (t.name match {
-              case _: DefaultGetterName => References.empty
-              case _ => References.fromSymbol(t, References.defined)
-            }) |+|
-              // Consider abstract members used
-              (if (t.isAbstractMember) References.fromSymbol(t, References.used) else References.empty) |+|
-              t.tree.fold(References.empty)(Trees.references)
+            case p: PackageSymbol =>
+              if (debug) println(s"*********** PackageSymbol: ${name(p)}")
+              p.declarations.foldMap(references)
 
-          case p: PackageSymbol =>
-            if (updEnv.debug) println(s"*********** PackageSymbol: ${name(p)}")
-            p.declarations.foldMap(references)
+            case c: ClassSymbol =>
+              if (debug) println(s"*********** ClassSymbol: ${name(c)}, decls: ${c.declarations}")
+              (c.name match {
+                case tpnme.RefinedClassMagic => References.empty
+                case _ => References.fromSymbol(c, References.defined)
+              }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
 
-          case c: ClassSymbol =>
-            if (updEnv.debug) println(s"*********** ClassSymbol: ${name(c)}, decls: ${c.declarations}")
-            (c.name match {
-              case tpnme.RefinedClassMagic => References.empty
-              case _ => References.fromSymbol(c, References.defined)
-            }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
-
-          case _: (ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => References.empty
-        })).run(updEnv)
-      }
-    }
+            case _: (ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => References.empty
+          })
+        } yield res
+    )
 }

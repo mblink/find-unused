@@ -1,6 +1,5 @@
 package bl.unused
 
-import cats.data.Kleisli
 import cats.syntax.foldable.*
 import tastyquery.Contexts.*
 import tastyquery.Symbols.*

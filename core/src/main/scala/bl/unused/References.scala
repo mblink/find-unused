@@ -15,10 +15,10 @@ object References {
   given monoid: Monoid[References] =
     Monoid.instance(References(Map.empty, Set.empty), (x, y) => References(x.defined ++ y.defined, x.used ++ y.used))
 
-  lazy val empty: EnvR[References] = EnvR(_ => monoid.empty)
+  lazy val empty: EnvR[References] = EnvR.noSeenSymbols(_ => monoid.empty)
 
   def defined(sym: Symbol)(using ctx: Context): EnvR[References] =
-    EnvR { env =>
+    EnvR.noSeenSymbols { env =>
       References(
         defined = Map(sym.hashCode -> (Symbols.name(sym), sym.tree.map(t => Positions.format(env.rootDirectory, t.pos)))),
         used = sym match {

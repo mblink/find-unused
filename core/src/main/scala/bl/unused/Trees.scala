@@ -1,7 +1,5 @@
 package bl.unused
 
-import cats.Id
-import cats.data.Kleisli
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
 import tastyquery.Contexts.*
@@ -33,8 +31,8 @@ object Trees {
   }
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
-    Kleisli.ask[Id, Env].flatMap { env =>
-      if (env.debug) println(s"************* tree: ${Debug.printer(tree)}")
+    EnvR.debug.flatMap { debug =>
+      if (debug) println(s"************* tree: ${Debug.printer(tree)}")
       tree match {
         case Alternative(trees) => referencesL(trees)
         case AnnotatedTypeTree(tpt, annotation) => references(tpt) |+| references(annotation)
