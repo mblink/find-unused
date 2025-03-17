@@ -28,7 +28,7 @@ object References {
           case _ => Set.empty
         },
       )
-    }
+    } |+| Annotations.checkForUnused(sym)
 
   def used(sym: Symbol)(using ctx: Context): EnvR[References] =
     References(Map.empty, Set(sym.hashCode)).pure[EnvR]

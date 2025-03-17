@@ -48,20 +48,22 @@ object Symbols {
       case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => None
     }.filterNot(_ == sym)
 
-  def debugDetails(message: String, sym: Symbol, indent: Int): String = {
+  def debugDetails(message: String, sym: Symbol, indent: Int)(using ctx: Context): String = {
     val spaces = " " * indent
+    val termSym = Some(sym).collect { case t: TermSymbol => t }
     s"""
-    |$message symbol -- ${sym.getClass} ${name(sym)}
+    |$message -- ${sym.getClass} ${name(sym)}
     |  class: ${sym.getClass}
     |  toString: $sym
     |  name: ${name(sym)}
     |  hashCode: ${sym.hashCode}
-    |  isExport: ${Some(sym).collect { case t: TermSymbol => t.isExport }.getOrElse(false)}
+    |  isExport: ${termSym.fold(false)(_.isExport)}
     |  isSynthetic: ${isSynthetic(sym)}
     |  isConstructor: ${isConstructor(sym)}
     |  isDefaultParam: ${isDefaultParam(sym)}
     |  isGiven: ${isGiven(sym)}
-    |  isParamAccessor: ${Some(sym).collect { case t: TermSymbol => t.isParamAccessor }.getOrElse(false)}
+    |  isParamAccessor: ${termSym.fold(false)(_.isParamAccessor)}
+    |  nextOverriddenSymbol: ${termSym.flatMap(nextOverriddenSymbol).fold("None")(s => "\n" ++ debugDetails("nextOverriddenSymbol", s, indent + 2))}
     |""".stripMargin.replace("\n", s"\n$spaces")
   }
 
@@ -205,43 +207,48 @@ object Symbols {
    * This is the ultimate problem we're working around. For some reason, both the parameter and result types match,
    * but the overall type of the methods don't match.
    */
-  def nextOverriddenSymbol(sym: TermOrTypeSymbol)(using ctx: Context): Option[TermOrTypeSymbol] =
+  def nextOverriddenSymbol(sym: TermOrTypeSymbol)(using ctx: Context): Option[TermOrTypeSymbol] = {
+    def listsMatch[A](l1: List[A], l2: List[A], cmp: (A, A) => Boolean): Boolean =
+      if (l1.length == l2.length) l1.zip(l2).forall(cmp.tupled)
+      else false
+
+    def typesMatch(t1: TypeOrMethodic, t2: TypeOrMethodic): Boolean =
+      (t1, t2) match {
+        case (m1: MethodType, m2: MethodType) =>
+          val paramsMatch = listsMatch(m1.paramTypes, m2.paramTypes, typesMatch)
+          val resultMatch = typesMatch(m1.resultType, m2.resultType)
+
+          paramsMatch && resultMatch
+
+        case (p1: PolyType, p2: PolyType) =>
+          val paramsMatch = listsMatch(p1.paramTypeBounds, p2.paramTypeBounds, _.isSameBounds(_))
+          val resultMatch = typesMatch(p1.resultType, p2.resultType)
+
+          paramsMatch && resultMatch
+
+        case _ => t1.matches(t2)
+      }
+
     sym.nextOverriddenSymbol.orElse(
       sym match {
         case t: TermSymbol if t.owner.isClass && !isConstructor(t) && !t.isPrivate =>
           val ownerClass = t.owner.asClass
           val ownerType = ownerClass.thisType
+          val targetType = t.typeAsSeenFrom(ownerType)
 
-          t.typeAsSeenFrom(ownerType) match {
-            case targetType: MethodType =>
-              ownerClass.linearization.drop(1).collectFirst(Function.unlift { parentClass =>
-                val candidates = parentClass.getAllOverloadedDecls(t.name).filterNot(_.isPrivate)
+          ownerClass.linearization.drop(1).collectFirst(Function.unlift { parentClass =>
+            val candidates = parentClass.getAllOverloadedDecls(t.name).filterNot(_.isPrivate)
 
-                candidates.find { candidate =>
-                  candidate.typeAsSeenFrom(ownerType) match {
-                    case candidateType: MethodType =>
-                      val paramsMatch = (candidateType.paramTypes, targetType.paramTypes) match {
-                        case (candidateParams, targetParams) if candidateParams.length == targetParams.length =>
-                          candidateParams.zip(targetParams).forall(_.matches(_))
-                        case _ =>
-                          false
-                      }
-                      val resultMatch = candidateType.resultType.matches(targetType.resultType)
-
-                      paramsMatch && resultMatch
-
-                    case _ => false
-                  }
-                }
-              })
-
-            case _ => None
-          }
+            candidates.find { candidate =>
+              typesMatch(candidate.typeAsSeenFrom(ownerType), targetType)
+            }
+          })
 
         case _ =>
           None
       }
     )
+  }
 
   def references(sym: Symbol)(using ctx: Context): EnvR[References] =
     EnvR.hasSeenSymbol(sym).flatMap(seen =>
@@ -250,7 +257,7 @@ object Symbols {
         for {
           _ <- EnvR.addSeenSymbol(sym)
           debug <- EnvR.debug
-          res <- Annotations.checkForUnused(sym) |+| (sym match {
+          res <- sym match {
             // Don't analyze module vals, they cause objects to always appear used
             case t: TermSymbol if t.isModuleVal =>
               if (debug) println(s"*********** TermSymbol (module val): ${name(t)}")
@@ -279,7 +286,7 @@ object Symbols {
               }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
 
             case _: (ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => References.empty
-          })
+          }
         } yield res
     )
 }

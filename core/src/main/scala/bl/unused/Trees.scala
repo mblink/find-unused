@@ -39,13 +39,16 @@ object Trees {
         case AppliedTypeTree(tycon, args) => references(tycon) |+| referencesL(args)
         case Apply(fun, args) => references(fun) |+| referencesL(args)
         case Assign(lhs, rhs) => references(lhs) |+| references(rhs)
-        case Bind(_, body, _ /* symbol */) => references(body)
+        case Bind(_, body, symbol) => Symbols.references(symbol) |+| references(body)
         case Block(stats, expr) => referencesL(stats) |+| references(expr)
         case ByNameTypeTree(result) => references(result)
         case CaseDef(pattern, guard, body) => references(pattern) |+| referencesO(guard) |+| references(body)
         case c @ ClassDef(_, rhs, _ /* symbol */) => templateReferences(rhs, Some(c))
-        case d @ DefDef(_, paramLists, resultTpt, rhs, _ /* symbol */) =>
-          paramLists.foldMap(e => referencesL(e.merge)) |+| references(resultTpt) |+| referencesO(rhs)
+        case DefDef(_, paramLists, resultTpt, rhs, symbol) =>
+          Symbols.references(symbol) |+|
+            paramLists.foldMap(e => referencesL(e.merge)) |+|
+            references(resultTpt) |+|
+            referencesO(rhs)
         case ExplicitTypeBoundsTree(low, high) => references(low) |+| references(high)
         case Export(expr, selectors) => references(expr) |+| referencesL(selectors)
         case ExprPattern(expr) => references(expr)
