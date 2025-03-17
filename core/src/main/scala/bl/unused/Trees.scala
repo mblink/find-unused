@@ -43,7 +43,7 @@ object Trees {
         case Block(stats, expr) => referencesL(stats) |+| references(expr)
         case ByNameTypeTree(result) => references(result)
         case CaseDef(pattern, guard, body) => references(pattern) |+| referencesO(guard) |+| references(body)
-        case c @ ClassDef(_, rhs, _ /* symbol */) => templateReferences(rhs, Some(c))
+        case c @ ClassDef(_, rhs, symbol) => Symbols.references(symbol) |+| templateReferences(rhs, Some(c))
         case DefDef(_, paramLists, resultTpt, rhs, symbol) =>
           Symbols.references(symbol) |+|
             paramLists.foldMap(e => referencesL(e.merge)) |+|
@@ -109,8 +109,7 @@ object Trees {
         case t @ TypeWrapper(_) => Types.prefixReferences(t.toPrefix)
         // TODO - should implicits be added to References#used?
         case Unapply(fun, implicits, patterns) => references(fun) |+| referencesL(implicits) |+| referencesL(patterns)
-        case ValDef(_, tpt, rhs, symbol) =>
-          references(tpt) |+| referencesO(rhs) |+| Annotations.checkForUnused(symbol)
+        case ValDef(_, tpt, rhs, symbol) => Symbols.references(symbol) |+| references(tpt) |+| referencesO(rhs)
         case While(cond, body) => references(cond) |+| references(body)
         case WildcardPattern(_) => References.empty
         case WildcardTypeArgTree(bounds) => references(bounds)

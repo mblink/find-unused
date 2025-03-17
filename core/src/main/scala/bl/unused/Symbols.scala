@@ -56,6 +56,8 @@ object Symbols {
     |  class: ${sym.getClass}
     |  toString: $sym
     |  name: ${name(sym)}
+    |  raw name: ${sym.name}
+    |  raw name pprint: ${Debug.printer(sym.name)}
     |  hashCode: ${sym.hashCode}
     |  isExport: ${termSym.fold(false)(_.isExport)}
     |  isSynthetic: ${isSynthetic(sym)}
@@ -250,6 +252,50 @@ object Symbols {
     )
   }
 
+  // Does the given Symbol or its owner have a DefaultGetterName as its name?
+  // It seems like `def`s with default params are duplicated as `DefDef`s with a `name` that's a `DefaultGetterParam`
+  private object DefaultParam {
+    private def isDefaultName(name: Name): Boolean =
+      name match {
+        case _: DefaultGetterName => true
+        case _ => false
+      }
+
+    def unapply(sym: Symbol): Boolean =
+      isDefaultName(sym.name) || Option(sym.owner).fold(false)(s => isDefaultName(s.name))
+  }
+
+  private object IgnoredParam {
+    def unapply(sym: Symbol): Boolean =
+      sym match {
+        case t: TermSymbol =>
+          t.name match {
+            // Wildcard, i.e. `_`
+            case UniqueName(SimpleName(""), "_$", _) => true
+            // Tuple destructuring
+            case UniqueName(SimpleName(""), "$", _) => true
+            case _ => false
+          }
+        case _ => false
+      }
+  }
+
+  private object AbstractMember {
+    def unapply(sym: Symbol): Boolean = Some(sym).collect { case t: TermSymbol => t.isAbstractMember }.getOrElse(false)
+  }
+
+  private object AbstractMethodParam {
+    def unapply(sym: Symbol): Boolean = Option(sym.owner).fold(false)(AbstractMember.unapply)
+  }
+
+  private object OverrideMethodParam {
+    def unapply(sym: Symbol)(using ctx: Context): Boolean =
+      Option(sym.owner)
+        .collect { case t: TermSymbol => t }
+        .flatMap(Symbols.nextOverriddenSymbol)
+        .nonEmpty
+  }
+
   def references(sym: Symbol)(using ctx: Context): EnvR[References] =
     EnvR.hasSeenSymbol(sym).flatMap(seen =>
       if (seen) References.empty
@@ -263,15 +309,24 @@ object Symbols {
               if (debug) println(s"*********** TermSymbol (module val): ${name(t)}")
               References.empty
 
+            case t @ IgnoredParam() =>
+              if (debug) println(s"*********** TermSymbol (ignored param): ${name(t)}")
+              References.empty
+
             case t: TermSymbol =>
               if (debug) println(s"*********** TermSymbol: ${name(t)}")
               // Don't count default params as definitions
-              (t.name match {
-                case _: DefaultGetterName => References.empty
+              (t match {
+                case DefaultParam() => References.empty
                 case _ => References.fromSymbol(t, References.defined)
               }) |+|
-                // Consider abstract members used
-                (if (t.isAbstractMember) References.fromSymbol(t, References.used) else References.empty) |+|
+                (t match {
+                  // Consider abstract members, params of abstract methods, and params of override methods used
+                  case AbstractMember() | AbstractMethodParam() | OverrideMethodParam() =>
+                    References.fromSymbol(t, References.used)
+                  case _ =>
+                    References.empty
+                }) |+|
                 t.tree.fold(References.empty)(Trees.references)
 
             case p: PackageSymbol =>
