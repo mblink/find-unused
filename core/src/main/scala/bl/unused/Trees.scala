@@ -30,6 +30,9 @@ object Trees {
       referencesL(body)
   }
 
+  private def ifNotSynthetic(sym: Symbol)(refs: => EnvR[References]): EnvR[References] =
+    if (Symbols.isSynthetic(sym)) References.empty else refs
+
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     EnvR.debug.flatMap { debug =>
       if (debug) println(s"************* tree: ${Debug.printer(tree)}")
@@ -39,16 +42,22 @@ object Trees {
         case AppliedTypeTree(tycon, args) => references(tycon) |+| referencesL(args)
         case Apply(fun, args) => references(fun) |+| referencesL(args)
         case Assign(lhs, rhs) => references(lhs) |+| references(rhs)
-        case Bind(_, body, symbol) => Symbols.references(symbol) |+| references(body)
+        case Bind(_, body, symbol) =>
+          // Not sure if a Bind's symbol can ever be synthetic but it can't hurt to check
+          ifNotSynthetic(symbol)(Symbols.references(symbol) |+| references(body))
         case Block(stats, expr) => referencesL(stats) |+| references(expr)
         case ByNameTypeTree(result) => references(result)
         case CaseDef(pattern, guard, body) => references(pattern) |+| referencesO(guard) |+| references(body)
-        case c @ ClassDef(_, rhs, symbol) => Symbols.references(symbol) |+| templateReferences(rhs, Some(c))
+        case c @ ClassDef(_, rhs, symbol) =>
+          // Not sure if a ClassDef's symbol can ever be synthetic but it can't hurt to check
+          ifNotSynthetic(symbol)(Symbols.references(symbol) |+| templateReferences(rhs, Some(c)))
         case DefDef(_, paramLists, resultTpt, rhs, symbol) =>
-          Symbols.references(symbol) |+|
-            paramLists.foldMap(e => referencesL(e.merge)) |+|
-            references(resultTpt) |+|
-            referencesO(rhs)
+          ifNotSynthetic(symbol)(
+            Symbols.references(symbol) |+|
+              paramLists.foldMap(e => referencesL(e.merge)) |+|
+              references(resultTpt) |+|
+              referencesO(rhs)
+          )
         case ExplicitTypeBoundsTree(low, high) => references(low) |+| references(high)
         case Export(expr, selectors) => references(expr) |+| referencesL(selectors)
         case ExprPattern(expr) => references(expr)
@@ -109,7 +118,8 @@ object Trees {
         case t @ TypeWrapper(_) => Types.prefixReferences(t.toPrefix)
         // TODO - should implicits be added to References#used?
         case Unapply(fun, implicits, patterns) => references(fun) |+| referencesL(implicits) |+| referencesL(patterns)
-        case ValDef(_, tpt, rhs, symbol) => Symbols.references(symbol) |+| references(tpt) |+| referencesO(rhs)
+        case ValDef(_, tpt, rhs, symbol) =>
+          ifNotSynthetic(symbol)(Symbols.references(symbol) |+| references(tpt) |+| referencesO(rhs))
         case While(cond, body) => references(cond) |+| references(body)
         case WildcardPattern(_) => References.empty
         case WildcardTypeArgTree(bounds) => references(bounds)

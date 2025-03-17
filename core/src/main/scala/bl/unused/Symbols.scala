@@ -319,6 +319,10 @@ object Symbols {
           _ <- EnvR.addSeenSymbol(sym)
           debug <- EnvR.debug
           res <- sym match {
+            case s if isSynthetic(s) =>
+              if (debug) println(s"*********** ${s.getClass.getSimpleName} (synthetic): ${name(s)}")
+              References.empty
+
             // Don't analyze module vals, they cause objects to always appear used
             case t: TermSymbol if t.isModuleVal =>
               if (debug) println(s"*********** TermSymbol (module val): ${name(t)}")
@@ -356,6 +360,7 @@ object Symbols {
               }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
 
             case t: TypeMemberSymbol =>
+              if (debug) println(s"*********** TypeMemberSymbol: ${name(t)}")
               (Option(t.owner) match {
                 case Some(RefinementClass()) => References.empty
                 case _ => References.fromSymbol(t, References.defined)

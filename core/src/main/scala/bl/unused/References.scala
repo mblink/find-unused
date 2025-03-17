@@ -37,7 +37,7 @@ object References {
     sym: Symbol,
     mk: Symbol => EnvR[References],
     skipExportCheck: Boolean = false,
-  )(using ctx: Context): EnvR[References] = {
+  )(using ctx: Context): EnvR[References] =
     EnvR.env.flatMap { env =>
       if (env.symbolIsValid(sym))
         sym match {
@@ -76,5 +76,4 @@ object References {
 
       case _ => empty
     })
-  }
 }
