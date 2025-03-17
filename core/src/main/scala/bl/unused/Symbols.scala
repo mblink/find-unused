@@ -108,7 +108,8 @@ object Symbols {
       .flatMap(c => c.getMember(name).toList ++ c.declarations.filter(_.name == name))
       .toSet
 
-  /** Find all symbols matching the given `Ident`
+  /**
+   * Find all symbols matching the given `Ident`
    *
    * tasty-query sometimes throws an error on `Ident#symbol`, in which case we fall back to looking at `Ident#referenceType`.
    * If that's a `TermRef`, we look at its `prefix` in an attempt to identify the `ClassSymbol` that owns the `Ident`.
@@ -142,7 +143,8 @@ object Symbols {
       case _ => None
     }
 
-  /** Find all symbols matching the given `Select` by looking at the `selectOwner`
+  /**
+   * Find all symbols matching the given `Select` by looking at the `selectOwner`
    *
    * Unfortunately `selectOwner` is private so we need to use java reflection to get it -- see `getSelectOwner` above.
    *
@@ -155,7 +157,8 @@ object Symbols {
       .collect { case c: ClassSymbol => c }
       .fold(Set.empty)(getFromClasses(_, sel.name))
 
-  /** Find all symbols matching the given `Select` by checking if its `qualifier` is an `Apply`
+  /**
+   * Find all symbols matching the given `Select` by checking if its `qualifier` is an `Apply`
    *
    * If it is an `Apply`, we get the result type of the method call it represents, attempt to get the symbol of
    * that type, check if it's a `ClassSymbol`, and then use that `ClassSymbol` to find symbols with names matching
@@ -176,7 +179,8 @@ object Symbols {
       .collect { case c: ClassSymbol => c }
       .fold(Set.empty)(getFromClasses(_, sel.name))
 
-  /** Find all symbols matching the given `Select`
+  /**
+   * Find all symbols matching the given `Select`
    *
    * tasty-query sometimes throws an error on `Select#symbol`, in which case we fall back to two approaches:
    *
@@ -191,7 +195,8 @@ object Symbols {
       ).flatMap(f => Either.catchNonFatal(f(sel)).toOption.getOrElse(Set.empty))
     )
 
-  /** Get the first symbol the given `TermOrTypeSymbol` overrides, if any
+  /**
+   * Get the first symbol the given `TermOrTypeSymbol` overrides, if any
    *
    * tasty-query has a built-in `TermOrTypeSymbol#nextOverriddenSymbol` method, but it sometimes returns `None` unexpectedly
    * We first try calling that, and then perform our fallback logic.

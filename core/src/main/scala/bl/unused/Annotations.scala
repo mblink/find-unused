@@ -73,7 +73,8 @@ object Annotations {
       .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
       .flatMap(_.collectFirst { case v if v.name == paramAccessor.name => v.symbol }) // v is a constructor param
 
-  /** Check the given Symbol for annotations that suppress unused warnings
+  /**
+   * Check the given Symbol for annotations that suppress unused warnings
    *
    * This includes two variants:
    *
