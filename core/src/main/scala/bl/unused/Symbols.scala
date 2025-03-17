@@ -12,26 +12,26 @@ import tastyquery.SymbolsOps.*
 
 object Symbols {
   def isSynthetic(sym: Symbol): Boolean =
-    sym match {
-      case s: TermOrTypeSymbol => s.isSynthetic
-      case _ => false
-    }
+    Some(sym).collect { case t: TermOrTypeSymbol => t.isSynthetic }.getOrElse(false)
+
+  def syntheticMemberOfCaseClass(sym: Symbol)(using ctx: Context): Option[ClassSymbol] =
+    if (isSynthetic(sym))
+      Option(sym.owner).flatMap {
+        case c: ClassSymbol => if (c.isCaseClass) Some(c) else c.companionClass.filter(_.isCaseClass)
+        case _ => None
+      }
+    else
+      None
 
   def isConstructor(sym: Symbol): Boolean = sym.name == nme.Constructor
 
   def isDefaultParam(sym: Symbol): Boolean =
-    sym match {
-      case t: TermSymbol => t.isParamWithDefault
-      case _ => false
-    }
+    Some(sym).collect { case t: TermSymbol => t.isParamWithDefault }.getOrElse(false)
 
   def isGiven(sym: Symbol): Boolean =
-    sym match {
-      case t: TermSymbol => t.isGivenOrUsing || t.isImplicit
-      case _ => false
-    }
+    Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
 
-  def defaultIsValid(sym: Symbol): Boolean =
+  def isValidDefinition(sym: Symbol): Boolean =
     !isSynthetic(sym) && !isConstructor(sym) && !isDefaultParam(sym)
 
   def name(sym: Symbol): String =
@@ -319,8 +319,8 @@ object Symbols {
           _ <- EnvR.addSeenSymbol(sym)
           debug <- EnvR.debug
           res <- sym match {
-            case s if isSynthetic(s) =>
-              if (debug) println(s"*********** ${s.getClass.getSimpleName} (synthetic): ${name(s)}")
+            case s if syntheticMemberOfCaseClass(s).nonEmpty =>
+              if (debug) println(s"*********** ${s.getClass.getSimpleName} (synthetic case class member): ${name(s)}")
               References.empty
 
             // Don't analyze module vals, they cause objects to always appear used

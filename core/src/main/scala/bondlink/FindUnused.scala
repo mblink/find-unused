@@ -18,7 +18,7 @@ object FindUnused {
       // `implicit val` instead of `given` so it's initialized eagerly for logging/timing purposes
       implicit val ctx: Context = Context.initialize(ClasspathLoaders.read(javaModules ::: classpath.toList))
 
-      val env = Env(debug, rootDirectory, packages, s => Symbols.defaultIsValid(s) && symbolIsValid(s))
+      val env = Env(debug, rootDirectory, packages, symbolIsValid)
 
       packages.foldMap { p =>
         println(s"[find-unused] Analyzing package $p")

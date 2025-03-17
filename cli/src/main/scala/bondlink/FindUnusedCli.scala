@@ -94,21 +94,19 @@ object FindUnusedCli {
     if (args.debug.value)
       println(s"*********** Result: ${Debug.printer(refs)}")
 
-    val unused = refs.defined
-      .filterNot((code, _) => refs.used.contains(code))
-      .toList
+    val unused = refs.computeUnused
       .pipe(l =>
         if (args.exclusion.nonEmpty)
-          l.filterNot { case (_, (name, pos)) => args.exclusion.exists(_.matches(pos, name)) }
+          l.filterNot((name, pos) => args.exclusion.exists(_.matches(pos, name)))
         else
           l
       )
       .sortBy {
-        case (_, (name, Some(SourcePos(file, line, col)))) => (file, line, col, name)
-        case (_, (name, Some(pos))) => (pos, 0, 0, name)
-        case (_, (name, None)) => (name, 0, 0, "")
+        case (name, Some(SourcePos(file, line, col))) => (file, line, col, name)
+        case (name, Some(pos)) => (pos, 0, 0, name)
+        case (name, None) => (name, 0, 0, "")
       }
-      .map { case (_, (name, pos)) => (name, pos.getOrElse("")) }
+      .map((name, pos) => (name, pos.getOrElse("")))
 
     if (unused.lengthIs > 0) {
       val len = unused.length

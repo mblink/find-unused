@@ -19,10 +19,7 @@ object Trees {
   def templateReferences(tpl: Template, klass: Option[ClassDef])(using ctx: Context): EnvR[References] = {
     val Template(constr, parents, self, body) = tpl
     val selfRefs0 = referencesO(self)
-    val selfRefs = klass match {
-      case Some(c) => selfRefs0.map(r => r.copy(used = r.used - c.symbol.hashCode))
-      case None => selfRefs0
-    }
+    val selfRefs = klass.fold(selfRefs0)(c => selfRefs0.map(_.removeUsed(c.symbol)))
 
     references(constr) |+|
       referencesL(parents) |+|
@@ -30,8 +27,15 @@ object Trees {
       referencesL(body)
   }
 
-  private def ifNotSynthetic(sym: Symbol)(refs: => EnvR[References]): EnvR[References] =
-    if (Symbols.isSynthetic(sym)) References.empty else refs
+  /**
+   * If this symbol is a synthetic member of a case class or its companion object, don't consider the case class used
+   * unless this symbol is used.
+   *
+   * This is necessary to verify whether a case class is truly used. Without this check, the synthetic members
+   * always make it look like the class is used, since they refer to the class type in their signatures.
+   */
+  private def removeCaseClassIfSynthetic(sym: Symbol)(refs: EnvR[References])(using ctx: Context): EnvR[References] =
+    Symbols.syntheticMemberOfCaseClass(sym).fold(refs)(c => refs.map(_.removeUsed(c).addUsedProxy(sym, c)))
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     EnvR.debug.flatMap { debug =>
@@ -42,17 +46,13 @@ object Trees {
         case AppliedTypeTree(tycon, args) => references(tycon) |+| referencesL(args)
         case Apply(fun, args) => references(fun) |+| referencesL(args)
         case Assign(lhs, rhs) => references(lhs) |+| references(rhs)
-        case Bind(_, body, symbol) =>
-          // Not sure if a Bind's symbol can ever be synthetic but it can't hurt to check
-          ifNotSynthetic(symbol)(Symbols.references(symbol) |+| references(body))
+        case Bind(_, body, symbol) => Symbols.references(symbol) |+| references(body)
         case Block(stats, expr) => referencesL(stats) |+| references(expr)
         case ByNameTypeTree(result) => references(result)
         case CaseDef(pattern, guard, body) => references(pattern) |+| referencesO(guard) |+| references(body)
-        case c @ ClassDef(_, rhs, symbol) =>
-          // Not sure if a ClassDef's symbol can ever be synthetic but it can't hurt to check
-          ifNotSynthetic(symbol)(Symbols.references(symbol) |+| templateReferences(rhs, Some(c)))
-        case DefDef(_, paramLists, resultTpt, rhs, symbol) =>
-          ifNotSynthetic(symbol)(
+        case c @ ClassDef(_, rhs, symbol) => Symbols.references(symbol) |+| templateReferences(rhs, Some(c))
+        case DefDef(name, paramLists, resultTpt, rhs, symbol) =>
+          removeCaseClassIfSynthetic(symbol)(
             Symbols.references(symbol) |+|
               paramLists.foldMap(e => referencesL(e.merge)) |+|
               references(resultTpt) |+|
@@ -119,7 +119,7 @@ object Trees {
         // TODO - should implicits be added to References#used?
         case Unapply(fun, implicits, patterns) => references(fun) |+| referencesL(implicits) |+| referencesL(patterns)
         case ValDef(_, tpt, rhs, symbol) =>
-          ifNotSynthetic(symbol)(Symbols.references(symbol) |+| references(tpt) |+| referencesO(rhs))
+          removeCaseClassIfSynthetic(symbol)(Symbols.references(symbol) |+| references(tpt) |+| referencesO(rhs))
         case While(cond, body) => references(cond) |+| references(body)
         case WildcardPattern(_) => References.empty
         case WildcardTypeArgTree(bounds) => references(bounds)
