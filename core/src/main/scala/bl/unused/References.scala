@@ -33,7 +33,11 @@ object References {
   def used(sym: Symbol)(using ctx: Context): EnvR[References] =
     References(Map.empty, Set(sym.hashCode)).pure[EnvR]
 
-  def fromSymbol(sym: Symbol, mk: Symbol => EnvR[References])(using ctx: Context): EnvR[References] = {
+  def fromSymbol(
+    sym: Symbol,
+    mk: Symbol => EnvR[References],
+    skipExportCheck: Boolean = false,
+  )(using ctx: Context): EnvR[References] = {
     EnvR.env.flatMap { env =>
       if (env.symbolIsValid(sym))
         sym match {
@@ -48,21 +52,27 @@ object References {
         }
       else
         empty
-    } |+| (sym match {
+    } |+| (if (skipExportCheck) References.empty else sym match {
       /*
-      If sym is an exported term, look up the symbol in the Context and consider the result used
+      If sym is an exported term:
 
-      This might be a bug in tasty-query -- some symbols have different `hashCode`s when found in an
-      `Ident` in `treeRefs` vs. when found as a `TermSymbol` in `symRefs`
+        1. Look up the matching term symbol in the Context and consider the result used
+          - This might be a bug in tasty-query -- some symbols have different `hashCode`s when found in an
+            `Ident` in `treeRefs` vs. when found as a `TermSymbol` in `symRefs`
+        2. Look up the matching type symbol in the Context and consider the result used
+          - This covers cases where an export is only used as a value, not also as a type
       */
-      case t: TermSymbol if t.isExport => Symbols.matchingTermSym(t).fold(empty)(fromSymbol(_, mk))
+      case t: TermSymbol if t.isExport =>
+        Symbols.matchingTermSymbol(t).fold(empty)(fromSymbol(_, mk, true)) |+|
+          Symbols.matchingTypeSymbol(t).fold(empty)(fromSymbol(_, mk, true))
 
       /*
       If sym is a type member and there's a matching term symbol that's an exported term, consider the term used
 
       This covers cases where an export is only used as a type and the companion object isn't used
       */
-      case t: TypeMemberSymbol => Symbols.matchingTermSym(t).filter(_.isExport).fold(empty)(fromSymbol(_, mk))
+      case t: TypeMemberSymbol =>
+        Symbols.matchingTermSymbol(t).filter(_.isExport).fold(empty)(fromSymbol(_, mk, true))
 
       case _ => empty
     })

@@ -8,6 +8,7 @@ import tastyquery.Names.*
 import tastyquery.Trees.*
 import tastyquery.Types.*
 import tastyquery.Symbols.*
+import tastyquery.SymbolsOps.*
 
 object Symbols {
   def isSynthetic(sym: Symbol): Boolean =
@@ -40,13 +41,23 @@ object Symbols {
       case None => sym.displayFullName
     }).replace("$.", ".")
 
-  def matchingTermSym(sym: Symbol)(using ctx: Context): Option[TermSymbol] =
-    Option(sym.owner).flatMap {
-      case c: ClassSymbol => c.getMember(termName(sym.name.toString))
-      case p: PackageSymbol => p.getDecl(termName(sym.name.toString)).collect { case t: TermSymbol => t }
+  private def matchingSymbol[N, A](
+    name: String => N,
+    getMember: (ClassSymbol, N) => Option[A],
+    getDecl: (PackageSymbol, N) => Option[A],
+  ): Symbol => Option[A] =
+    sym => Option(sym.owner).flatMap {
+      case c: ClassSymbol => getMember(c, name(sym.name.toString))
+      case p: PackageSymbol => getDecl(p, name(sym.name.toString))
       // I don't think TermSymbols have children...?
       case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => None
     }.filterNot(_ == sym)
+
+  def matchingTermSymbol(using ctx: Context): Symbol => Option[TermSymbol] =
+    matchingSymbol(termName, _.getMember(_), _.getDecl(_).collect { case t: TermSymbol => t })
+
+  def matchingTypeSymbol(using ctx: Context): Symbol => Option[TypeSymbol] =
+    matchingSymbol(typeName, _.getMember(_), _.getDecl(_))
 
   def debugDetails(message: String, sym: Symbol, indent: Int)(using ctx: Context): String = {
     val spaces = " " * indent
@@ -75,7 +86,7 @@ object Symbols {
         |********************************** $message
         |${debugDetails("sym", sym, 0)}
         |${debugDetails("owner", sym.owner, 2)}
-        |${matchingTermSym(sym).fold("")(debugDetails("matchingTermSym", _, 0))}
+        |${matchingTermSymbol(sym).fold("")(debugDetails("matchingTermSym", _, 0))}
         |**********************************
         |""".stripMargin)
 
@@ -296,6 +307,10 @@ object Symbols {
         .nonEmpty
   }
 
+  private object RefinementClass {
+    def unapply(sym: Symbol): Boolean = Some(sym).collect { case c: ClassSymbol => c.isRefinementClass }.getOrElse(false)
+  }
+
   def references(sym: Symbol)(using ctx: Context): EnvR[References] =
     EnvR.hasSeenSymbol(sym).flatMap(seen =>
       if (seen) References.empty
@@ -335,12 +350,27 @@ object Symbols {
 
             case c: ClassSymbol =>
               if (debug) println(s"*********** ClassSymbol: ${name(c)}, decls: ${c.declarations}")
-              (c.name match {
-                case tpnme.RefinedClassMagic => References.empty
+              (c match {
+                case RefinementClass() => References.empty
                 case _ => References.fromSymbol(c, References.defined)
               }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
 
-            case _: (ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => References.empty
+            case t: TypeMemberSymbol =>
+              (Option(t.owner) match {
+                case Some(RefinementClass()) => References.empty
+                case _ => References.fromSymbol(t, References.defined)
+              }) |+|
+                (t.typeDef match {
+                  case TypeMemberDefinition.TypeAlias(tpe) =>
+                    Types.symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
+                  case TypeMemberDefinition.AbstractType(bounds) =>
+                    Types.typeBoundsTypes(bounds).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used))
+                  case TypeMemberDefinition.OpaqueTypeAlias(bounds, tpe) =>
+                    Types.typeBoundsTypes(bounds).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used)) |+|
+                      Types.symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
+                })
+
+            case _: (ClassTypeParamSymbol | LocalTypeParamSymbol) => References.empty
           }
         } yield res
     )
