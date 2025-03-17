@@ -5,7 +5,7 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.20"
-lazy val scala36 = "3.6.3"
+lazy val scala36 = "3.6.4"
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala36)
 
@@ -150,7 +150,7 @@ lazy val cli = project.in(file("cli"))
     ),
     run / fork := true,
     assembly / aggregate := false,
-    assembly / mainClass := Some("bondlink.FindUnusedCli"),
+    assembly / mainClass := Some("bl.unused.FindUnusedCli"),
   )
   .settings(sys.env.get(cliAssemblyJarNameEnv) match {
     case Some(name) => Seq(assembly / assemblyJarName := name)
@@ -183,6 +183,6 @@ lazy val plugin = project.in(file("plugin"))
     ),
     cliClasspath := (cli / Runtime / fullClasspath).value.map(_.data),
     buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
-    buildInfoPackage := "bondlink",
+    buildInfoPackage := "bl.unused",
   )
   .enablePlugins(SbtPlugin, BuildInfoPlugin)
