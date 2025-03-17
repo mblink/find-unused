@@ -52,7 +52,7 @@ object Trees {
         case ExplicitTypeBoundsTree(low, high) => references(low) |+| references(high)
         case Export(expr, selectors) => references(expr) |+| referencesL(selectors)
         case ExprPattern(expr) => references(expr)
-        case i @ Ident(name) =>
+        case i @ Ident(_) =>
           Symbols.getFromIdent(i).toList.foldMap(
             Symbols.withStaticOwners(_).toList.foldMap(References.fromSymbol(_, References.used))
           )
@@ -80,7 +80,7 @@ object Trees {
         case RefinedTypeTree(underlying, refinements, refinedCls) =>
           references(underlying) |+| referencesL(refinements) |+| Symbols.references(refinedCls)
         case Return(expr, from) => referencesO(expr) |+| Symbols.references(from)
-        case s @ Select(qualifier, name) =>
+        case s @ Select(qualifier, _) =>
           Symbols.getFromSelect(s).toList.foldMap(References.fromSymbol(_, References.used)) |+| references(qualifier)
         case SelectOuter(qualifier, _) => references(qualifier) // TODO - will this ever be a given?
         case s @ SelectTypeTree(qualifier, _) => Types.references(s.toType) |+| references(qualifier)

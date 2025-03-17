@@ -227,9 +227,7 @@ object FindUnusedPlugin extends AutoPlugin {
 
     val rootDir = (ThisBuild / baseDirectory).value.toString
     val termWidth = terminal.value.getWidth
-
     val debug = findUnusedDebug.value
-
     val exclusions = findUnusedExclusions.value
 
     (forkOpts, (cmd: String) => {
