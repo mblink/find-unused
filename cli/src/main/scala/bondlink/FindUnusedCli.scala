@@ -3,10 +3,12 @@ package bl.unused
 import cats.syntax.either.*
 import cats.syntax.foldable.*
 import com.github.freva.asciitable.{AsciiTable, Column, HorizontalAlign}
+import java.io.{PrintWriter, StringWriter}
 import java.nio.file.Paths
 import mainargs.{arg, main, Flag, ParserForClass, ParserForMethods, TokensReader}
 import scala.io.AnsiColor
 import scala.jdk.CollectionConverters.*
+import scala.util.Using
 import scala.util.chaining.*
 import scala.util.matching.Regex
 
@@ -83,55 +85,64 @@ object FindUnusedCli {
     def unapply(s: String): Option[Int] = s.toIntOption
   }
 
-  private def run(runner: FindUnused.Runner, args: Args, singularType: String): Unit = {
-    val refs = runner(
-      args.debug.value,
-      args.rootDirectory.map(Paths.get(_)),
-      args.`package`,
-      args.classpath.distinct.map(Paths.get(_)),
-    )
-
-    if (args.debug.value)
-      println(s"*********** Result: ${Debug.printer(refs)}")
-
-    val unused = refs.computeUnused
-      .pipe(l =>
-        if (args.exclusion.nonEmpty)
-          l.filterNot((name, pos) => args.exclusion.exists(_.matches(pos, name)))
-        else
-          l
+  private def run(runner: FindUnused.Runner, args: Args, pluralType: String): Unit =
+    Either.catchNonFatal {
+      val refs = runner(
+        args.debug.value,
+        args.rootDirectory.map(Paths.get(_)),
+        args.`package`,
+        args.classpath.distinct.map(Paths.get(_)),
       )
-      .sortBy {
-        case (name, Some(SourcePos(file, line, col))) => (file, line, col, name)
-        case (name, Some(pos)) => (pos, 0, 0, name)
-        case (name, None) => (name, 0, 0, "")
+
+      if (args.debug.value)
+        println(s"*********** Result: ${Debug.printer(refs)}")
+
+      val unused = refs.computeUnused
+        .pipe(l =>
+          if (args.exclusion.nonEmpty)
+            l.filterNot((name, pos) => args.exclusion.exists(_.matches(pos, name)))
+          else
+            l
+        )
+        .sortBy {
+          case (name, Some(SourcePos(file, line, col))) => (file, line, col, name)
+          case (name, Some(pos)) => (pos, 0, 0, name)
+          case (name, None) => (name, 0, 0, "")
+        }
+        .map((name, pos) => (name, pos.getOrElse("")))
+
+      if (unused.lengthIs > 0) {
+        val len = unused.length
+        val header = red(s"Found $len unused $pluralType")
+        val tableWidth = args.width.map(_ - 3).filter(_ > 0).getOrElse(80)
+        val instanceWidth = math.max(math.round(tableWidth / 3.0).toInt, 25)
+        val locationWidth = tableWidth - instanceWidth
+        val table = AsciiTable.getTable(
+          AsciiTable.BASIC_ASCII_NO_DATA_SEPARATORS,
+          unused.asJava,
+          List(
+            tableCol("Instance", instanceWidth).`with`[(String, String)](_._1),
+            tableCol("Location", locationWidth).`with`[(String, String)](_._2),
+          ).asJava
+        )
+
+        System.err.println("\n" ++ header ++ "\n\n" ++ table ++ "\n")
+        System.exit(1)
       }
-      .map((name, pos) => (name, pos.getOrElse("")))
-
-    if (unused.lengthIs > 0) {
-      val len = unused.length
-      val header = red(s"Found $len unused ${singularType}${if (len == 1) "" else "s"}")
-      val tableWidth = args.width.map(_ - 3).filter(_ > 0).getOrElse(80)
-      val instanceWidth = math.max(math.round(tableWidth / 3.0).toInt, 25)
-      val locationWidth = tableWidth - instanceWidth
-      val table = AsciiTable.getTable(
-        AsciiTable.BASIC_ASCII_NO_DATA_SEPARATORS,
-        unused.asJava,
-        List(
-          tableCol("Instance", instanceWidth).`with`[(String, String)](_._1),
-          tableCol("Location", locationWidth).`with`[(String, String)](_._2),
-        ).asJava
+    }.valueOr { err =>
+      Using.resource(new StringWriter())(sw =>
+        Using.resource(new PrintWriter(sw)) { pw =>
+          err.printStackTrace(pw)
+          System.err.println(red(s"Error finding unused $pluralType\n\n" ++ sw.toString))
+        }
       )
-
-      System.err.println("\n" ++ header ++ "\n\n" ++ table ++ "\n")
       System.exit(1)
     }
-  }
 
-  @main def explicits(args: Args): Unit = run(FindUnused.explicits, args, "explicit")
-  @main def givens(args: Args): Unit = run(FindUnused.givens, args, "given")
-  @main def implicits(args: Args): Unit = run(FindUnused.givens, args, "implicit")
-  @main def all(args: Args): Unit = run(FindUnused.all, args, "term")
+  @main def explicits(args: Args): Unit = run(FindUnused.explicits, args, "explicits")
+  @main def givens(args: Args): Unit = run(FindUnused.givens, args, "givens")
+  @main def implicits(args: Args): Unit = run(FindUnused.givens, args, "implicits")
+  @main def all(args: Args): Unit = run(FindUnused.all, args, "terms")
 
   def main(args: Array[String]): Unit =
     ParserForMethods(this).runEither(args.toSeq).fold(
