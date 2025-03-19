@@ -75,6 +75,7 @@ object FindUnusedCli {
     @arg(short = 'e', doc = "Exclusions") exclusion: Seq[Exclusion],
     @arg(short = 'w', doc = "Terminal width") width: Option[Int],
     @arg(short = 'o', doc = "Output file") output: Option[String],
+    @arg(doc = "Disable color output") noColor: Flag,
   )
 
   object Args {
@@ -128,7 +129,7 @@ object FindUnusedCli {
                 .orElse(Using(TerminalBuilder.builder.system(true).dumb(false).build)(_.getWidth).toOption)
                 .filter(_ > 0)
                 .getOrElse(80),
-              true
+              !args.noColor.value && sys.env.get("NO_COLOR").isEmpty
             )
         }
 
