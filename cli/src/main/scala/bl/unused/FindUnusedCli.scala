@@ -1,13 +1,14 @@
 package bl.unused
 
+import cats.Align
 import cats.syntax.either.*
 import cats.syntax.foldable.*
-import com.github.freva.asciitable.{AsciiTable, Column, HorizontalAlign}
-import java.io.{PrintWriter, StringWriter}
+import java.io.{File, FileWriter, PrintStream, PrintWriter, StringWriter}
 import java.nio.file.Paths
 import mainargs.{arg, main, Flag, ParserForClass, ParserForMethods, TokensReader}
+import org.jline.terminal.TerminalBuilder
+import org.jline.utils.InfoCmp.Capability
 import scala.io.AnsiColor
-import scala.jdk.CollectionConverters.*
 import scala.util.Using
 import scala.util.chaining.*
 import scala.util.matching.Regex
@@ -15,6 +16,8 @@ import scala.util.matching.Regex
 object FindUnusedCli {
   private lazy val parser = ParserForMethods(this)
 
+  private def bold(s: String): String = AnsiColor.BOLD ++ s ++ AnsiColor.RESET
+  private def green(s: String): String = AnsiColor.GREEN ++ s ++ AnsiColor.RESET
   private def red(s: String): String = AnsiColor.RED ++ s ++ AnsiColor.RESET
 
   @main
@@ -72,20 +75,24 @@ object FindUnusedCli {
     @arg(short = 'c', doc = "Classpath") classpath: Seq[String],
     @arg(short = 'e', doc = "Exclusions") exclusion: Seq[Exclusion],
     @arg(short = 'w', doc = "Terminal width") width: Option[Int],
+    @arg(short = 'o', doc = "Output file") output: Option[String],
   )
 
   object Args {
     given parser: ParserForClass[Args] = ParserForClass[Args]
   }
 
-  private def tableCol(name: String, width: Int): Column =
-    new Column().header(name).maxWidth(math.max(width, 1)).dataAlign(HorizontalAlign.LEFT)
-
   private object IntFromString {
     def unapply(s: String): Option[Int] = s.toIntOption
   }
 
-  private def run(runner: FindUnused.Runner, args: Args, pluralType: String): Unit =
+  private def withOutputWriter(args: Args, sysOut: => PrintStream)(f: PrintWriter => Unit): Unit =
+    args.output match {
+      case Some(file) => Using.resource(new FileWriter(new File(file)))(fw => Using.resource(new PrintWriter(fw))(f))
+      case None => Using.resource(new PrintWriter(sysOut))(f)
+    }
+
+  private def run(runner: FindUnused.Runner, args: Args, singularType: String): Unit =
     Either.catchNonFatal {
       val refs = runner(
         args.debug.value,
@@ -111,38 +118,113 @@ object FindUnusedCli {
         }
         .map((name, pos) => (name, pos.getOrElse("")))
 
-      if (unused.lengthIs > 0) {
-        val len = unused.length
-        val header = red(s"Found $len unused $pluralType")
-        val tableWidth = args.width.map(_ - 3).filter(_ > 0).getOrElse(80)
-        val instanceWidth = math.max(math.round(tableWidth / 3.0).toInt, 25)
-        val locationWidth = tableWidth - instanceWidth
-        val table = AsciiTable.getTable(
-          AsciiTable.BASIC_ASCII_NO_DATA_SEPARATORS,
-          unused.asJava,
-          List(
-            tableCol("Instance", instanceWidth).`with`[(String, String)](_._1),
-            tableCol("Location", locationWidth).`with`[(String, String)](_._2),
-          ).asJava
-        )
+      val hasUnused = unused.lengthIs > 0
 
-        System.err.println("\n" ++ header ++ "\n\n" ++ table ++ "\n")
-        System.exit(1)
+      withOutputWriter(args, if (hasUnused) System.err else System.out) { writer =>
+        val (tableWidth, useColors) = args.output match {
+          case Some(_) => (Int.MaxValue, false)
+          case None =>
+            Using(TerminalBuilder.builder.system(true).build)(t =>
+              (t.getWidth, Option(t.getStringCapability(Capability.set_a_foreground)).nonEmpty)
+            ).toOption match {
+              case Some((termWidth, termColors)) =>
+                (args.width.orElse(Some(termWidth)).filter(_ > 0).getOrElse(80), termColors)
+              case None =>
+                (args.width.filter(_ > 0).getOrElse(80), false)
+            }
+        }
+
+        val paddingWidth = 7
+        val maxInstanceWidth = math.max(math.round(tableWidth / 3.0).toInt, 25)
+        val instanceHeader = "Instance"
+        val locationHeader = "Location"
+        val (idealInstanceWidth, idealLocationWidth) = unused.foldLeft((instanceHeader.length, locationHeader.length)) {
+          case ((accInst, accLoc), (name, pos)) =>
+            val nameLen = name.length
+            val posLen = pos.length
+            (
+              if (nameLen > accInst) nameLen else accInst,
+              if (posLen > accLoc) posLen else accLoc
+            )
+        }
+        val (instanceWidth, locationWidth) = (idealInstanceWidth, idealLocationWidth) match {
+          case t @ (inst, loc) if inst + loc + paddingWidth < tableWidth => t
+          case (inst, loc) =>
+            val instWidth = math.min(inst, maxInstanceWidth)
+            val locWidth = tableWidth - instWidth - paddingWidth
+            (instWidth, locWidth)
+        }
+
+        def printSeparator(left: Char, middle: Char, right: Char): Unit = {
+          writer.print(left)
+          writer.print("─" * (instanceWidth + 2))
+          writer.print(middle)
+          writer.print("─" * (locationWidth + 2))
+          writer.println(right)
+        }
+
+        def printRow(inst: String, loc: String, style0: String => String): Unit = {
+          val style = if (useColors) style0 else identity
+          val instLines = inst.grouped(instanceWidth).toList
+          val locLines = loc.grouped(locationWidth).toList
+
+          Align[List].zipAll(instLines, locLines, "", "").foreach { (instStr, locStr) =>
+            val instSpaces = instanceWidth - instStr.length
+            val locSpaces = locationWidth - locStr.length
+
+            writer.print("│ ")
+            writer.print(style(instStr))
+            writer.print(" " * instSpaces)
+            writer.print(" │ ")
+            writer.print(style(locStr))
+            writer.print(" " * locSpaces)
+            writer.println(" │")
+          }
+        }
+
+        val pluralType = singularType ++ (if (unused.lengthIs == 1) "" else "s")
+        val header = if (hasUnused) s"Found ${unused.length} unused $pluralType" else s"No unused $pluralType found"
+        val headerFmt = (hasUnused, useColors) match {
+          case (_, false) => identity[String]
+          case (true, true) => red.andThen(bold)
+          case (false, true) => green.andThen(bold)
+        }
+
+        writer.println(args.output.fold("\n")(_ => "") ++ headerFmt(header))
+
+        if (hasUnused) {
+          writer.print("\n")
+          printSeparator('┌', '┬', '┐')
+          printRow(instanceHeader, locationHeader, bold)
+          printSeparator('├', '┼', '┤')
+          unused.zipWithIndex.foreach { case ((name, pos), idx) =>
+            if (idx != 0)
+              printSeparator('├', '┼', '┤')
+
+            printRow(name, pos, identity)
+          }
+          printSeparator('└', '┴', '┘')
+          args.output.fold(writer.println("\n"))(_ => ())
+        }
+
+        writer.flush
       }
+
+      System.exit(if (hasUnused) 1 else 0)
     }.valueOr { err =>
       Using.resource(new StringWriter())(sw =>
         Using.resource(new PrintWriter(sw)) { pw =>
           err.printStackTrace(pw)
-          System.err.println(red(s"Error finding unused $pluralType\n\n" ++ sw.toString))
+          System.err.println(red(s"Error finding unused ${singularType}s\n\n" ++ sw.toString))
         }
       )
       System.exit(1)
     }
 
-  @main def explicits(args: Args): Unit = run(FindUnused.explicits, args, "explicits")
-  @main def givens(args: Args): Unit = run(FindUnused.givens, args, "givens")
-  @main def implicits(args: Args): Unit = run(FindUnused.givens, args, "implicits")
-  @main def all(args: Args): Unit = run(FindUnused.all, args, "terms")
+  @main def explicits(args: Args): Unit = run(FindUnused.explicits, args, "explicit")
+  @main def givens(args: Args): Unit = run(FindUnused.givens, args, "given")
+  @main def implicits(args: Args): Unit = run(FindUnused.givens, args, "implicit")
+  @main def all(args: Args): Unit = run(FindUnused.all, args, "term")
 
   def main(args: Array[String]): Unit =
     ParserForMethods(this).runEither(args.toSeq).fold(

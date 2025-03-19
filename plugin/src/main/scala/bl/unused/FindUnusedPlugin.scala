@@ -3,7 +3,7 @@ package bl.unused
 import coursier.Fetch
 import coursier.core.*
 import coursier.maven.MavenRepository
-import java.io.{PrintWriter, StringWriter}
+import java.io.{FileOutputStream, PrintWriter, StringWriter}
 import sbt.*
 import sbt.internal.util.complete.*
 import sbt.internal.util.complete.Parsers.*
@@ -22,6 +22,10 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val findUnusedCommandOptions = taskKey[(ForkOptions, String => Seq[String])]("Find unused command options")
 
     val findUnusedUseLocalClasspath = settingKey[Boolean]("Whether to use the local classpath for find-unused")
+
+    val findUnusedUseRootDirectory = settingKey[Boolean]("Whether to use the root directory for find-unused")
+
+    val findUnusedOutputFile = settingKey[Option[File]]("A file to write find-unused output to instead of stdout")
 
     val findUnusedProjectsKey: AttributeKey[Seq[ProjectRef]] = AttributeKey("findUnusedProjectRefs")
 
@@ -85,6 +89,8 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     findUnusedCliClasspath := findUnusedCliClasspathTask.value,
     findUnusedCommandOptions := findUnusedCommandOptionsTask.value,
     findUnusedUseLocalClasspath := false,
+    findUnusedUseRootDirectory := true,
+    findUnusedOutputFile := None,
     findUnusedStoreProjectClasspaths := findUnusedStoreProjectClasspathsTask.evaluated,
     findUnusedDebug := false,
     findUnusedPackages := Seq.empty,
@@ -200,9 +206,11 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
   private lazy val findUnusedCommandOptionsTask = Def.task {
     val log = streams.value.log
+    val outputFile = findUnusedOutputFile.value
+    val outputStrategy = outputFile.map(f => OutputStrategy.CustomOutput(new FileOutputStream(f)))
     val forkOpts = ForkOptions()
       .withJavaHome(javaHome.value)
-      .withOutputStrategy(outputStrategy.value)
+      .withOutputStrategy(outputStrategy)
       .withConnectInput(false)
       .withRunJVMOptions((findUnused / javaOptions).value.toVector)
 
@@ -231,6 +239,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val projClasspath = state.attributes(findUnusedClasspathKey)
     val projPackages = findUnusedPackages.value
 
+    val useRootDir = findUnusedUseRootDirectory.value
     val rootDir = (ThisBuild / baseDirectory).value.toString
     val termWidth = terminal.value.getWidth
     val debug = findUnusedDebug.value
@@ -240,12 +249,9 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
       val javaOpts = baseJavaOpts ++
         Seq(cmd) ++
         (if (debug) Seq("--debug") else Seq.empty) ++
-        Seq(
-          "--root-directory",
-          rootDir,
-          "--width",
-          termWidth.toString,
-        ) ++
+        (if (useRootDir) Seq("--root-directory", rootDir) else Seq.empty) ++
+        outputFile.map(f => Seq("--output", f.toString)).getOrElse(Seq.empty) ++
+        Seq("--width", termWidth.toString) ++
         projPackages.flatMap(Seq("--package", _)) ++
         projClasspath.flatMap(Seq("--classpath", _)) ++
         exclusions.flatMap(e => Seq("--exclusion", e.toArg))

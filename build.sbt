@@ -145,8 +145,8 @@ lazy val cli = project.in(file("cli"))
   .settings(
     name := "find-unused-cli",
     libraryDependencies ++= Seq(
-      "com.github.freva" % "ascii-table" % "1.8.0",
       "com.lihaoyi" %% "mainargs" % "0.7.6",
+      "org.jline" % "jline" % "3.29.0",
     ),
     run / fork := true,
     assembly / aggregate := false,

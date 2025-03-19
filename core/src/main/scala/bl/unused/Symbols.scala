@@ -39,7 +39,7 @@ object Symbols {
       case Some(owner: PackageSymbol) => s"${owner.displayFullName}.${sym.name}"
       case Some(owner: TermOrTypeSymbol) => s"${name(owner)}.${sym.name}"
       case None => sym.displayFullName
-    }).replace("$.", ".")
+    }).replace("$.", ".").stripSuffix("$")
 
   private def matchingSymbol[N, A](
     name: String => N,
