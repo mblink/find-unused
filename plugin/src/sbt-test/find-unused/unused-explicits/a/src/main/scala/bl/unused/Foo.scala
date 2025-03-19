@@ -1,4 +1,4 @@
-package bondlink
+package bl.unused
 
 case class Foo()
 
