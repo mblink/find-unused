@@ -7,7 +7,6 @@ import java.io.{File, FileWriter, PrintStream, PrintWriter, StringWriter}
 import java.nio.file.Paths
 import mainargs.{arg, main, Flag, ParserForClass, ParserForMethods, TokensReader}
 import org.jline.terminal.TerminalBuilder
-import org.jline.utils.InfoCmp.Capability
 import scala.io.AnsiColor
 import scala.util.Using
 import scala.util.chaining.*
@@ -124,14 +123,13 @@ object FindUnusedCli {
         val (tableWidth, useColors) = args.output match {
           case Some(_) => (Int.MaxValue, false)
           case None =>
-            Using(TerminalBuilder.builder.system(true).build)(t =>
-              (t.getWidth, Option(t.getStringCapability(Capability.set_a_foreground)).nonEmpty)
-            ).toOption match {
-              case Some((termWidth, termColors)) =>
-                (args.width.orElse(Some(termWidth)).filter(_ > 0).getOrElse(80), termColors)
-              case None =>
-                (args.width.filter(_ > 0).getOrElse(80), false)
-            }
+            (
+              args.width
+                .orElse(Using(TerminalBuilder.builder.system(true).dumb(false).build)(_.getWidth).toOption)
+                .filter(_ > 0)
+                .getOrElse(80),
+              true
+            )
         }
 
         val paddingWidth = 7
