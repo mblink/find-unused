@@ -1,7 +1,7 @@
 package bl.unused
 
-import coursier.Fetch
-import coursier.core.*
+import coursier.{Fetch, Repositories}
+import coursier.core.{Dependency, Module, ModuleName, Organization}
 import coursier.maven.MavenRepository
 import java.io.{FileOutputStream, PrintWriter, StringWriter}
 import sbt.*
@@ -149,7 +149,10 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     log.info("Fetching find-unused CLI with coursier")
 
     val dep = Dependency(Module(Organization("bondlink"), ModuleName("find-unused-cli_3"), Map.empty), BuildInfo.version)
-    val repos = Seq(MavenRepository("https://raw.githubusercontent.com/mblink/maven-repo/main"))
+    val repos = Seq(
+      Repositories.central,
+      MavenRepository("https://raw.githubusercontent.com/mblink/maven-repo/main"),
+    )
     runLogged(log, () => Fetch().withRepositories(repos).addDependencies(dep).run())
   }
 
