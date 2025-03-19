@@ -161,22 +161,23 @@ lazy val cli = project.in(file("cli"))
 
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
+def pluginSbtVersion(scalaBinaryVersion: String): String =
+  scalaBinaryVersion match {
+    case "2.12" => "1.9.0"
+    case _ => "2.0.0-M4"
+  }
+
 lazy val plugin = project.in(file("plugin"))
   .settings(commonSettings)
   .settings(publishSettings)
   .settings(
     name := "find-unused-plugin",
     scalaVersion := scala2,
-    // Waiting on sbt 2.0.0-M4 to enable Scala 3.6, we need `Def.inputTaskDyn` which landed in https://github.com/sbt/sbt/pull/8033
-    crossScalaVersions := Seq(scala2/*, scala36*/),
-    pluginCrossBuild / sbtVersion := {
-      scalaBinaryVersion.value match {
-        case "2.12" => "1.9.0"
-        case _ => "2.0.0-M3"
-      }
-    },
+    crossScalaVersions := Seq(scala2, scala36),
+    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value),
     scriptedBufferLog := false,
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
+    scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value),
     libraryDependencies ++= Seq(
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),

@@ -11,7 +11,7 @@ import sbt.Keys.*
 import sbt.plugins.JvmPlugin
 import scala.util.matching.Regex
 
-object FindUnusedPlugin extends AutoPlugin {
+object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
   object autoImport {
     val findUnused = settingKey[Unit]("Find unused")
 
@@ -24,6 +24,8 @@ object FindUnusedPlugin extends AutoPlugin {
     val findUnusedUseLocalClasspath = settingKey[Boolean]("Whether to use the local classpath for find-unused")
 
     val findUnusedProjectsKey: AttributeKey[Seq[ProjectRef]] = AttributeKey("findUnusedProjectRefs")
+
+    val findUnusedFullTestClasspath = taskKey[Seq[String]]("Find unused full test classpath")
 
     val findUnusedClasspathKey: AttributeKey[Seq[String]] = AttributeKey("findUnusedClasspath")
 
@@ -94,6 +96,10 @@ object FindUnusedPlugin extends AutoPlugin {
     Keys.commands ++= commands,
   )
 
+  override lazy val projectSettings: Seq[Setting[?]] = Def.settings(
+    findUnusedFullTestClasspath := findUnusedFullTestClasspathTask.value,
+  )
+
   // https://stackoverflow.com/a/39868021/2163024
   private def autoClose[A <: AutoCloseable, B](a: A)(f: A => B): B = {
     var err: Throwable = null
@@ -161,10 +167,10 @@ object FindUnusedPlugin extends AutoPlugin {
 
     Def.task {
       val classpath: Seq[String] = projectRefs
-        .map(p => (p / Test / fullClasspath))
+        .map(_ / findUnusedFullTestClasspath)
         .join
         .value
-        .flatMap(_.map(_.data.toString))
+        .flatten
         .distinct
 
       StateTransform { s =>

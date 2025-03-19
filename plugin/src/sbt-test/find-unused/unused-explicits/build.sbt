@@ -3,7 +3,7 @@ Global / findUnusedPackages += "bondlink"
 
 lazy val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := "3.6.3",
+  scalaVersion := "3.6.4",
 )
 
 lazy val a = project.in(file("a")).settings(commonSettings)
