@@ -40,6 +40,8 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     val findUnusedPackages = settingKey[Seq[String]]("Packages to analyze with find unused")
 
+    val findUnusedOnFail = taskKey[Int => Unit]("Callback to run when any find-unused command fails")
+
     case class FindUnusedExclusion(
       src: Option[Regex],
       sym: Option[Regex],
@@ -94,6 +96,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     findUnusedStoreProjectClasspaths := findUnusedStoreProjectClasspathsTask.evaluated,
     findUnusedDebug := false,
     findUnusedPackages := Seq.empty,
+    findUnusedOnFail := (code => throw new MessageOnlyException(s"find-unused failed (exit code $code)")),
     findUnusedExclusions := Seq.empty,
     findUnusedExplicits := findUnusedExplicitsTask.value,
     findUnusedGivens := findUnusedGivensTask.value,
@@ -267,10 +270,11 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
   private def findUnusedTask(cmd: String) = Def.task {
     val (forkOpts, javaOpts) = findUnusedCommandOptions.value
+    val onFail = findUnusedOnFail.value
 
     Fork.java.fork(forkOpts, javaOpts(cmd)).exitValue() match {
       case 0 => ()
-      case 1 => throw new MessageOnlyException("find-unused failed, see output above")
+      case code => onFail(code)
     }
   }
 
