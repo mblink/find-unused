@@ -119,7 +119,7 @@ commonSettings
 
 lazy val publishSettings = Seq(
   publish / skip := false,
-  publishTo := Some("GitHub Package Registry".at("https://maven.pkg.github.com/mblink/find-unused")),
+  publishTo := Some("BondLink S3".at("s3://bondlink-maven-repo")),
 )
 
 lazy val core = project.in(file("core"))
