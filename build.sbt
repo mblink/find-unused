@@ -116,11 +116,10 @@ lazy val commonSettings = Seq(
 )
 
 commonSettings
-gitRelease := {}
 
 lazy val publishSettings = Seq(
   publish / skip := false,
-  gitPublishDir := file("/src/maven-repo"),
+  publishTo := Some("GitHub Package Registry".at("https://maven.pkg.github.com/mblink/find-unused")),
 )
 
 lazy val core = project.in(file("core"))
