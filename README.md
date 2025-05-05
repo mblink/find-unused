@@ -30,7 +30,7 @@ GitHub release:
 ![GitHub Release](https://img.shields.io/github/v/release/mblink/find-unused)
 
 ```scala
-resolvers += "bondlink-maven-repo" at "https://s3.amazonaws.com/bondlink-maven-repo"
+resolvers += "bondlink-maven-repo" at "https://maven.bondlink-cdn.com"
 addSbtPlugin("bondlink" % "find-unused" % "x.y.z")
 ```
 

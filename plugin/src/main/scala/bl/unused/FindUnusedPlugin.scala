@@ -154,7 +154,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val dep = Dependency(Module(Organization("bondlink"), ModuleName("find-unused-cli_3"), Map.empty), BuildInfo.version)
     val repos = Seq(
       Repositories.central,
-      MavenRepository("https://s3.amazonaws.com/bondlink-maven-repo"),
+      MavenRepository("https://maven.bondlink-cdn.com"),
     )
     runLogged(log, () => Fetch().withRepositories(repos).addDependencies(dep).run())
   }
