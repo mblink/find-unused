@@ -7,6 +7,7 @@ import tastyquery.Contexts.Context
 import tastyquery.Names.*
 import tastyquery.Trees.*
 import tastyquery.Types.*
+import tastyquery.Signatures.Signature
 import tastyquery.Symbols.*
 import tastyquery.SymbolsOps.*
 
@@ -102,11 +103,52 @@ object Symbols {
     go(Set.empty, sym) + sym
   }
 
+  /** Remove `erased` parameters from a `TermSymbol`'s signature.'
+    *
+    * This is used below in `getFromClasses` and is necessary because calls to methods with `erased` params may end up with
+    * a `SignedName` where the `signature` does not include the `erased` params, causing the signature of the method call
+    * to not match the signature of the method definition.
+    */
+  private def signatureWithoutErasedParams(sym: TermSymbol)(using ctx: Context): Signature = {
+    val erasedParamIndices = sym.paramSymss.zipWithIndex.collect { case (Left(List(p)), i) if p.isErased => i }.toSet
+
+    if (erasedParamIndices.isEmpty) sym.signature
+    else sym.signature.copy(paramsSig = sym.signature.paramsSig.zipWithIndex.collect {
+      case (p, i) if !erasedParamIndices.contains(i) => p
+    })
+  }
+
   /** Find all symbols matching `name` in this `klass` and its parent classes */
-  def getFromClasses(klass: ClassSymbol, name: Name)(using ctx: Context): Set[Symbol] =
-    klass.linearization
-      .flatMap(c => c.getMember(name).toList ++ c.declarations.filter(_.name == name))
-      .toSet
+  def getFromClasses(klass: ClassSymbol, name: Name)(using ctx: Context): Set[Symbol] = {
+    name match {
+      /** If `name` is a `SignedName`, look for:
+        *   1. A member by `name`
+        *   2. A member by the `underlying` name
+        *   3. Any declarations with `name` as their name
+        *   4. Any declarations with `underlying` as their name and `signature` as their signature (excluding erased params)
+        */
+      case SignedName(underlying, signature, _) =>
+        klass.linearization
+          .flatMap(c =>
+            c.getMember(name).toList ++
+              c.getMember(underlying).toList ++
+              c.declarations.filter(d =>
+                d.name == name || (d.name == underlying && (d match {
+                  case t: TermSymbol => signature == t.signature || signature == signatureWithoutErasedParams(t)
+                  case _ => true
+                }))
+              )
+          )
+          .toSet
+
+      /** Otherwise look for a member by `name` and any declarations with `name` as their name */
+      case _ =>
+        klass.linearization
+          .flatMap(c => c.getMember(name).toList ++ c.declarations.filter(_.name == name))
+          .toSet
+    }
+  }
+
 
   /**
    * Find all symbols matching the given `Ident`
