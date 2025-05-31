@@ -50,7 +50,7 @@ object References {
     else
       empty
 
-  def used(sym: Symbol)(using ctx: Context): EnvR[References] =
+  def used(sym: Symbol): EnvR[References] =
     References(Map.empty, Set(sym.hashCode), Map.empty).pure[EnvR]
 
   def fromSymbol(

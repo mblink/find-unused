@@ -3,10 +3,8 @@ package bl.unused
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
 import tastyquery.Contexts.*
-import tastyquery.Names.*
 import tastyquery.Symbols.*
 import tastyquery.Trees.*
-import tastyquery.Types.*
 
 object Trees {
   def referencesO(tree: Option[Tree])(using ctx: Context): EnvR[References] = tree.fold(References.empty)(references)

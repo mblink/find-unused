@@ -91,7 +91,7 @@ object Symbols {
         |**********************************
         |""".stripMargin)
 
-  def withStaticOwners(sym: Symbol)(using ctx: Context): Set[Symbol] = {
+  def withStaticOwners(sym: Symbol): Set[Symbol] = {
     @annotation.tailrec
     def go(acc: Set[Symbol], sym: Symbol): Set[Symbol] =
       Either.catchNonFatal(Option(sym.owner)).toOption.flatten match {
