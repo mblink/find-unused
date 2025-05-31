@@ -110,7 +110,7 @@ transparent inline def foo(): Int = 1
 val bar = foo()
 ```
 
-The TASTy representation for `val bar` does not include a reference to `transparent inline def foo`, it appears as it
+The TASTy representation for `val bar` does not include a reference to `transparent inline def foo`, it appears as if
 `val bar` is simply defined as
 
 ```scala
