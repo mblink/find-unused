@@ -178,6 +178,8 @@ lazy val plugin = project.in(file("plugin"))
     name := "find-unused-plugin",
     scalaVersion := scala2,
     crossScalaVersions := Seq(scala2, scala36),
+    publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala36),
+    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala36),
     pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value),
     scriptedBufferLog := false,
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
