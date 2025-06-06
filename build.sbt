@@ -6,8 +6,9 @@ lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.20"
 lazy val scala36 = "3.6.4"
+lazy val scala37 = "3.7.1"
 
-ThisBuild / crossScalaVersions := Seq(scala2, scala36)
+ThisBuild / crossScalaVersions := Seq(scala2, scala36, scala37)
 
 val java21 = JavaSpec.temurin("21")
 val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
@@ -39,7 +40,7 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
 
-val shouldBuildCLI = isJava(21) ++ " && " ++ isScala(scala36) ++ " && github.event_name == 'push'"
+val shouldBuildCLI = isJava(21) ++ " && " ++ isScala(scala37) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
@@ -81,7 +82,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   name = "Release",
   oses = List("ubuntu-latest"),
   javas = List(java21),
-  scalas = List(scala36),
+  scalas = List(scala37),
   cond = Some(isTag ++ " && github.event_name == 'push'"),
   needs = List("build"),
   steps = List(
@@ -109,8 +110,8 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
-  scalaVersion := scala36,
-  crossScalaVersions := Seq(scala36),
+  scalaVersion := scala37,
+  crossScalaVersions := Seq(scala37),
   licenses += License.Apache2,
   publish / skip := true,
 )
@@ -126,11 +127,15 @@ lazy val core = project.in(file("core"))
   .settings(commonSettings)
   .settings(publishSettings)
   .settings(
+    if (tastyQueryDev) Seq()
+    else Seq(
+      resolvers += "bondlink-maven-repo" at "https://maven.bondlink-cdn.com",
+      libraryDependencies += "bondlink" %% "tasty-query" % "1.6.0",
+    )
+  )
+  .settings(
     name := "find-unused-core",
-    libraryDependencies ++= (
-      if (tastyQueryDev) Seq()
-      else Seq("ch.epfl.scala" %% "tasty-query" % "1.5.0")
-    ) ++ Seq(
+    libraryDependencies ++= Seq(
       "com.lihaoyi" %% "pprint" % "0.9.0",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
