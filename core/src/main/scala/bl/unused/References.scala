@@ -61,7 +61,7 @@ object References {
   )(using ctx: Context): EnvR[References] =
     EnvR.env.flatMap { env =>
       if (env.symbolIsValid(sym))
-        sym match {
+        (sym match {
           case _: PackageSymbol => empty
 
           case t: TermSymbol =>
@@ -70,30 +70,30 @@ object References {
               t.moduleClass.fold(empty)(mk)
 
           case _ => mk(sym)
-        }
+        }) |+| (if (skipExportCheck) References.empty else sym match {
+        /*
+        If sym is an exported term:
+
+          1. Look up the matching term symbol in the Context and consider the result used
+            - This might be a bug in tasty-query -- some symbols have different `hashCode`s when found in an
+              `Ident` in `treeRefs` vs. when found as a `TermSymbol` in `symRefs`
+          2. Look up the matching type symbol in the Context and consider the result used
+            - This covers cases where an export is only used as a value, not also as a type
+        */
+        case t: TermSymbol if t.isExport =>
+          Symbols.allMatchingSymbols(t).foldMap(fromSymbol(_, mk, true))
+
+        /*
+        If sym is a type member and there's a matching term symbol that's an exported term, consider the term used
+
+        This covers cases where an export is only used as a type and the companion object isn't used
+        */
+        case t: TypeMemberSymbol =>
+          Symbols.allMatchingSymbols(t).collect { case t: TermSymbol if t.isExport => t }.foldMap(fromSymbol(_, mk, true))
+
+        case _ => empty
+      })
       else
         empty
-    } |+| (if (skipExportCheck) References.empty else sym match {
-      /*
-      If sym is an exported term:
-
-        1. Look up the matching term symbol in the Context and consider the result used
-          - This might be a bug in tasty-query -- some symbols have different `hashCode`s when found in an
-            `Ident` in `treeRefs` vs. when found as a `TermSymbol` in `symRefs`
-        2. Look up the matching type symbol in the Context and consider the result used
-          - This covers cases where an export is only used as a value, not also as a type
-      */
-      case t: TermSymbol if t.isExport =>
-        Symbols.allMatchingSymbols(t).foldMap(fromSymbol(_, mk, true))
-
-      /*
-      If sym is a type member and there's a matching term symbol that's an exported term, consider the term used
-
-      This covers cases where an export is only used as a type and the companion object isn't used
-      */
-      case t: TypeMemberSymbol =>
-        Symbols.allMatchingSymbols(t).collect { case t: TermSymbol if t.isExport => t }.foldMap(fromSymbol(_, mk, true))
-
-      case _ => empty
-    })
+    }
 }
