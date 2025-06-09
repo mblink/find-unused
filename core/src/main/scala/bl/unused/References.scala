@@ -2,6 +2,7 @@ package bl.unused
 
 import cats.Monoid
 import cats.syntax.applicative.*
+import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
 import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
@@ -83,8 +84,7 @@ object References {
           - This covers cases where an export is only used as a value, not also as a type
       */
       case t: TermSymbol if t.isExport =>
-        Symbols.matchingTermSymbol(t).fold(empty)(fromSymbol(_, mk, true)) |+|
-          Symbols.matchingTypeSymbol(t).fold(empty)(fromSymbol(_, mk, true))
+        Symbols.allMatchingSymbols(t).foldMap(fromSymbol(_, mk, true))
 
       /*
       If sym is a type member and there's a matching term symbol that's an exported term, consider the term used
@@ -92,7 +92,7 @@ object References {
       This covers cases where an export is only used as a type and the companion object isn't used
       */
       case t: TypeMemberSymbol =>
-        Symbols.matchingTermSymbol(t).filter(_.isExport).fold(empty)(fromSymbol(_, mk, true))
+        Symbols.allMatchingSymbols(t).collect { case t: TermSymbol if t.isExport => t }.foldMap(fromSymbol(_, mk, true))
 
       case _ => empty
     })

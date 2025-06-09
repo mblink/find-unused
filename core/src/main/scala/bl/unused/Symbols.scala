@@ -42,23 +42,13 @@ object Symbols {
       case None => sym.displayFullName
     }).replace("$.", ".").stripSuffix("$")
 
-  private def matchingSymbol[N, A](
-    name: String => N,
-    getMember: (ClassSymbol, N) => Option[A],
-    getDecl: (PackageSymbol, N) => Option[A],
-  ): Symbol => Option[A] =
-    sym => Option(sym.owner).flatMap {
-      case c: ClassSymbol => getMember(c, name(sym.name.toString))
-      case p: PackageSymbol => getDecl(p, name(sym.name.toString))
+  def allMatchingSymbols(sym: Symbol)(using ctx: Context): List[Symbol] =
+    Option(sym.owner).fold(Nil) {
+      case c: ClassSymbol => c.declarations.filter(_.name.toString == sym.name.toString)
+      case p: PackageSymbol => p.declarations.filter(_.name.toString == sym.name.toString)
       // I don't think TermSymbols have children...?
-      case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => None
+      case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => Nil
     }.filterNot(_ == sym)
-
-  def matchingTermSymbol(using ctx: Context): Symbol => Option[TermSymbol] =
-    matchingSymbol(termName, _.getMember(_), _.getDecl(_).collect { case t: TermSymbol => t })
-
-  def matchingTypeSymbol(using ctx: Context): Symbol => Option[TypeSymbol] =
-    matchingSymbol(typeName, _.getMember(_), _.getDecl(_))
 
   def debugDetails(message: String, sym: Symbol, indent: Int)(using ctx: Context): String = {
     val spaces = " " * indent
@@ -87,7 +77,7 @@ object Symbols {
         |********************************** $message
         |${debugDetails("sym", sym, 0)}
         |${debugDetails("owner", sym.owner, 2)}
-        |${matchingTermSymbol(sym).fold("")(debugDetails("matchingTermSym", _, 0))}
+        |${allMatchingSymbols(sym).map(debugDetails("matchingSym", _, 0)).mkString("\n")}
         |**********************************
         |""".stripMargin)
 
