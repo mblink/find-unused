@@ -35,6 +35,12 @@ object Symbols {
   def isValidDefinition(sym: Symbol): Boolean =
     !isSynthetic(sym) && !isConstructor(sym) && !isDefaultParam(sym)
 
+  def isInPackage(pkgSyms: Set[PackageSymbol])(sym: Symbol): Boolean =
+    sym match {
+      case p: PackageSymbol => pkgSyms.contains(p) || Option(p.owner).exists(isInPackage(pkgSyms))
+      case _ => Option(sym.owner).exists(isInPackage(pkgSyms))
+    }
+
   def name(sym: Symbol): String =
     (Option(sym.owner) match {
       case Some(owner: PackageSymbol) => s"${owner.displayFullName}.${sym.name}"
