@@ -1,5 +1,7 @@
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
+ThisBuild / version := "0.2.2-SNAPSHOT"
+
 // To develop tasty-query locally, run sbt with the environment variable `TASTY_QUERY_DEVELOPMENT=1`
 lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQueryJVM")
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
