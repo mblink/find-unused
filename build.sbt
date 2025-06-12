@@ -167,9 +167,9 @@ lazy val cli = project.in(file("cli"))
 
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
-def pluginSbtVersion(scalaBinaryVersion: String): String =
+def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
-    case "2.12" => "1.9.0"
+    case "2.12" => sbt1Version
     case _ => "2.0.0-M4"
   }
 
@@ -182,10 +182,10 @@ lazy val plugin = project.in(file("plugin"))
     crossScalaVersions := Seq(scala2, scala36),
     publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala36),
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala36),
-    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value),
+    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
     scriptedBufferLog := false,
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
-    scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value),
+    scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
     libraryDependencies ++= Seq(
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),
