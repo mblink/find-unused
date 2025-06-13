@@ -16,7 +16,9 @@ See below for more details on setup and use.
   - [Standalone CLI](#standalone-cli-1)
 - [Known issues](#known-issues)
   - [`given`s/`implicit`s summoned with `inline`/macro methods](#givensimplicits-summoned-with-inlinemacro-methods)
+  - [`transparent inline` methods](#transparent-inline-methods)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
+- [Debugging](#debugging)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -125,3 +127,19 @@ At the moment this tool only works when all projects in your build use the same 
 Scala 3.6.x.
 
 Support may be added in the future for multiple Scala versions within the same build or for older Scala 3 versions.
+
+## Debugging
+
+You can use the sbt plugin to generate a `launch.json` config file that can be used in Visual Studio Code to debug `find-unused`.
+
+To debug a project that uses the sbt plugin:
+
+1. Load `sbt` in the project directory
+2. Run one of the available sbt commands: `findUnusedExplicitsDebugConfig`, `findUnusedGivensDebugConfig`, or `findUnusedAllDebugConfig`
+3. Copy the JSON that's printed out
+4. Clone `find-unused`
+5. Create `/path/to/find-unused/.vscode/launch.json` using the JSON from step 3
+6. Open the `find-unused` directory in VS Code
+7. Install and setup [Metals](https://scalameta.org/metals/docs/editors/vscode)
+8. Import the sbt build with Metals and wait for completion
+9. Set any breakpoints you want in `find-unused` and [start debugging](https://code.visualstudio.com/docs/debugtest/debugging#_start-a-debugging-session)
