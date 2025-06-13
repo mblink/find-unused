@@ -10,6 +10,8 @@ import sbt.internal.util.complete.Parsers.*
 import sbt.Keys.*
 import sbt.plugins.JvmPlugin
 import scala.util.matching.Regex
+import sjsonnew.support.scalajson.unsafe.CompactPrinter
+import sjsonnew.shaded.scalajson.ast.unsafe.{JArray, JField, JString, JObject, JValue}
 
 object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
   object autoImport {
@@ -19,7 +21,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     val findUnusedCliClasspath = taskKey[Seq[File]]("Find unused CLI classpath")
 
-    val findUnusedCommandOptions = taskKey[(ForkOptions, String => Seq[String])]("Find unused command options")
+    val findUnusedCommandOptions = taskKey[(ForkOptions, Seq[String], String => Seq[String])]("Find unused command options")
 
     val findUnusedUseLocalClasspath = settingKey[Boolean]("Whether to use the local classpath for find-unused")
 
@@ -72,6 +74,12 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val findUnusedImplicits = taskKey[Unit]("Find unused implicits")
 
     val findUnusedAll = taskKey[Unit]("Find all unused terms")
+
+    val findUnusedExplicitsDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused explicits")
+
+    val findUnusedGivensDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused givens")
+
+    val findUnusedAllDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused all")
   }
 
   import autoImport.*
@@ -102,6 +110,9 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     findUnusedGivens := findUnusedGivensTask.value,
     findUnusedImplicits := findUnusedGivensTask.value,
     findUnusedAll := findUnusedAllTask.value,
+    findUnusedExplicitsDebugConfig := findUnusedExplicitsDebugConfigTask.value,
+    findUnusedGivensDebugConfig := findUnusedGivensDebugConfigTask.value,
+    findUnusedAllDebugConfig := findUnusedAllDebugConfigTask.value,
     Keys.commands ++= commands,
   )
 
@@ -211,6 +222,8 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     storeAllClasspaths.toList ::: initState
   }
 
+  private lazy val mainClass = "bl.unused.FindUnusedCli"
+
   private lazy val findUnusedCommandOptionsTask = Def.task {
     val log = streams.value.log
     val outputFile = findUnusedOutputFile.value
@@ -222,8 +235,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
       .withRunJVMOptions((findUnused / javaOptions).value.toVector)
 
     val cliClasspath = findUnusedCliClasspath.value
-    val mainClass = "bl.unused.FindUnusedCli"
-    val baseJavaOpts = List("-cp", Path.makeString(cliClasspath), mainClass)
+    val classpathOpts = List("-cp", Path.makeString(cliClasspath))
 
     @annotation.tailrec
     def runCommand(command: String, state: State): State = {
@@ -252,8 +264,8 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val debug = findUnusedDebug.value
     val exclusions = findUnusedExclusions.value
 
-    (forkOpts, (cmd: String) => {
-      val javaOpts = baseJavaOpts ++
+    (forkOpts, classpathOpts, (cmd: String) => {
+      val javaOpts =
         Seq(cmd) ++
         (if (debug) Seq("--debug") else Seq.empty) ++
         (if (useRootDir) Seq("--root-directory", rootDir) else Seq.empty) ++
@@ -270,10 +282,10 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
   }
 
   private def findUnusedTask(cmd: String) = Def.task {
-    val (forkOpts, javaOpts) = findUnusedCommandOptions.value
+    val (forkOpts, classpathOpts, javaOpts) = findUnusedCommandOptions.value
     val onFail = findUnusedOnFail.value
 
-    Fork.java.fork(forkOpts, javaOpts(cmd)).exitValue() match {
+    Fork.java.fork(forkOpts, classpathOpts ++ Seq(mainClass) ++ javaOpts(cmd)).exitValue() match {
       case 0 => ()
       case code => onFail(code)
     }
@@ -282,4 +294,26 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
   private lazy val findUnusedExplicitsTask = findUnusedTask("explicits")
   private lazy val findUnusedGivensTask = findUnusedTask("givens")
   private lazy val findUnusedAllTask = findUnusedTask("all")
+
+  private def findUnusedDebugConfigTask(cmd: String) = Def.task {
+    val log = streams.value.log
+    val (forkOpts, _, javaOpts) = findUnusedCommandOptions.value
+    val conf = CompactPrinter(JObject(Array(
+      JField("version", JString("0.2.0")),
+      JField("configurations", JArray(JObject(Array(
+        JField("type", JString("scala")),
+        JField("name", JString("Debug")),
+        JField("request", JString("launch")),
+        JField("mainClass", JString(mainClass)),
+        JField("jvmOptions", JArray(forkOpts.runJVMOptions.map(JString(_): JValue).toArray)),
+        JField("args", JArray(javaOpts(cmd).map(JString(_): JValue).toArray)),
+      )))),
+    )))
+    log.info(conf)
+    conf
+  }
+
+  private lazy val findUnusedExplicitsDebugConfigTask = findUnusedDebugConfigTask("explicits")
+  private lazy val findUnusedGivensDebugConfigTask = findUnusedDebugConfigTask("givens")
+  private lazy val findUnusedAllDebugConfigTask = findUnusedDebugConfigTask("all")
 }
