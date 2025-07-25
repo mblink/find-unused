@@ -138,7 +138,7 @@ lazy val core = project.in(file("core"))
   .settings(
     name := "find-unused-core",
     libraryDependencies ++= Seq(
-      "com.lihaoyi" %% "pprint" % "0.9.0",
+      "com.lihaoyi" %% "pprint" % "0.9.3",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
   )
