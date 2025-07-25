@@ -34,7 +34,7 @@ object References {
 
   lazy val empty: EnvR[References] = EnvR.noSeenSymbols(_ => monoid.empty)
 
-  def defined(sym: Symbol)(using ctx: Context): EnvR[References] =
+  val defined = (sym: Symbol) => (ctx: Context) ?=>
     if (Symbols.isValidDefinition(sym))
       EnvR.noSeenSymbols { env =>
         References(
@@ -51,12 +51,12 @@ object References {
     else
       empty
 
-  def used(sym: Symbol): EnvR[References] =
+  val used = (sym: Symbol) => (ctx: Context) ?=>
     References(Map.empty, Set(sym.hashCode), Map.empty).pure[EnvR]
 
   def fromSymbol(
     sym: Symbol,
-    mk: Symbol => EnvR[References],
+    mk: Symbol => Context ?=> EnvR[References],
     skipExportCheck: Boolean = false,
   )(using ctx: Context): EnvR[References] =
     EnvR.env.flatMap { env =>
@@ -67,7 +67,7 @@ object References {
           case t: TermSymbol =>
             mk(t) |+|
               // If a TermSymbol is used and it has a corresponding module class, consider the module class used too
-              t.moduleClass.fold(empty)(mk)
+              t.moduleClass.fold(empty)(mk(_))
 
           case _ => mk(sym)
         }) |+| (if (skipExportCheck) References.empty else sym match {

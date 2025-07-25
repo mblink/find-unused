@@ -129,16 +129,12 @@ lazy val core = project.in(file("core"))
   .settings(commonSettings)
   .settings(publishSettings)
   .settings(
-    if (tastyQueryDev) Seq()
-    else Seq(
-      resolvers += "bondlink-maven-repo" at "https://maven.bondlink-cdn.com",
-      libraryDependencies += "bondlink" %% "tasty-query" % "1.6.0",
-    )
-  )
-  .settings(
     name := "find-unused-core",
-    libraryDependencies ++= Seq(
-      "com.lihaoyi" %% "pprint" % "0.9.0",
+    libraryDependencies ++= (
+      if (tastyQueryDev) Seq()
+      else Seq("ch.epfl.scala" %% "tasty-query" % "1.6.1")
+    ) ++ Seq(
+      "com.lihaoyi" %% "pprint" % "0.9.1",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
   )
