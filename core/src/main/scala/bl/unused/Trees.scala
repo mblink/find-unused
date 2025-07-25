@@ -33,7 +33,13 @@ object Trees {
    * always make it look like the class is used, since they refer to the class type in their signatures.
    */
   private def removeCaseClassIfSynthetic(sym: Symbol)(refs: EnvR[References])(using ctx: Context): EnvR[References] =
-    Symbols.syntheticMemberOfCaseClass(sym).fold(refs)(c => refs.map(_.removeUsed(c).addUsedProxy(sym, c)))
+    Symbols.syntheticMemberOfCaseClass(sym) match {
+      case Some(cls) =>
+        EnvR((env, syms) =>
+          refs.run(env.copy(symbolIsValid = s => env.symbolIsValid(s) && !Symbols.isSyntheticMemberOfCaseClass(cls, s)), syms)
+        ).map(_.removeUsed(cls).addUsedProxy(sym, cls))
+      case None => refs
+    }
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     EnvR.debug.flatMap { debug =>
