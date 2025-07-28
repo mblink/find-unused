@@ -45,7 +45,8 @@ def isScala(v: String) = s"matrix.scala == '$v'"
 val shouldBuildCLI = isJava(21) ++ " && " ++ isScala(scala37) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
-  WorkflowStep.Sbt(List("test", "scripted"), name = Some("Test")),
+  WorkflowStep.Sbt(List("test", "scripted"), name = Some("scripted"), cond = Some(isScala(scala2))),
+  WorkflowStep.Sbt(List("Test/compile"), name = Some("compile"), cond = Some(isScala(scala36) ++ " || " ++ isScala(scala37))),
   WorkflowStep.Sbt(
     List("cli/assembly"),
     name = Some("Build CLI"),
@@ -129,16 +130,12 @@ lazy val core = project.in(file("core"))
   .settings(commonSettings)
   .settings(publishSettings)
   .settings(
-    if (tastyQueryDev) Seq()
-    else Seq(
-      resolvers += "bondlink-maven-repo" at "https://maven.bondlink-cdn.com",
-      libraryDependencies += "bondlink" %% "tasty-query" % "1.6.0",
-    )
-  )
-  .settings(
     name := "find-unused-core",
-    libraryDependencies ++= Seq(
-      "com.lihaoyi" %% "pprint" % "0.9.0",
+    libraryDependencies ++= (
+      if (tastyQueryDev) Seq()
+      else Seq("ch.epfl.scala" %% "tasty-query" % "1.6.1")
+    ) ++ Seq(
+      "com.lihaoyi" %% "pprint" % "0.9.3",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
   )

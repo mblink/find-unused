@@ -24,6 +24,9 @@ object Symbols {
     else
       None
 
+  def isSyntheticMemberOfCaseClass(cls: ClassSymbol, sym: Symbol)(using ctx: Context): Boolean =
+    syntheticMemberOfCaseClass(sym).fold(false)(_ == cls)
+
   def isConstructor(sym: Symbol): Boolean = sym.name == nme.Constructor
 
   def isDefaultParam(sym: Symbol): Boolean =
