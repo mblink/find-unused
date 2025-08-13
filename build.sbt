@@ -7,10 +7,9 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.20"
-lazy val scala36 = "3.6.4"
-lazy val scala37 = "3.7.1"
+lazy val scala37 = "3.7.2"
 
-ThisBuild / crossScalaVersions := Seq(scala2, scala36, scala37)
+ThisBuild / crossScalaVersions := Seq(scala2, scala37)
 
 val java21 = JavaSpec.temurin("21")
 val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
@@ -46,7 +45,7 @@ val shouldBuildCLI = isJava(21) ++ " && " ++ isScala(scala37) ++ " && github.eve
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("scripted"), cond = Some(isScala(scala2))),
-  WorkflowStep.Sbt(List("Test/compile"), name = Some("compile"), cond = Some(isScala(scala36) ++ " || " ++ isScala(scala37))),
+  WorkflowStep.Sbt(List("Test/compile"), name = Some("compile"), cond = Some(isScala(scala37))),
   WorkflowStep.Sbt(
     List("cli/assembly"),
     name = Some("Build CLI"),
@@ -149,7 +148,7 @@ lazy val cli = project.in(file("cli"))
     name := "find-unused-cli",
     libraryDependencies ++= Seq(
       "com.lihaoyi" %% "mainargs" % "0.7.6",
-      "org.jline" % "jline" % "3.30.4",
+      "org.jline" % "jline" % "3.30.5",
     ),
     run / fork := true,
     assembly / aggregate := false,
@@ -167,7 +166,7 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
     case "2.12" => sbt1Version
-    case _ => "2.0.0-M4"
+    case _ => "2.0.0-RC2"
   }
 
 lazy val plugin = project.in(file("plugin"))
@@ -176,9 +175,9 @@ lazy val plugin = project.in(file("plugin"))
   .settings(
     name := "find-unused-plugin",
     scalaVersion := scala2,
-    crossScalaVersions := Seq(scala2, scala36),
-    publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala36),
-    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala36),
+    crossScalaVersions := Seq(scala2, scala37),
+    publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala37),
+    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala37),
     pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
     scriptedBufferLog := false,
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",

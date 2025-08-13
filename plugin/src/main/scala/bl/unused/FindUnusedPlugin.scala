@@ -21,6 +21,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     val findUnusedCliClasspath = taskKey[Seq[File]]("Find unused CLI classpath")
 
+    @cacheLevel(include = Array.empty)
     val findUnusedCommandOptions = taskKey[(ForkOptions, Seq[String], String => Seq[String])]("Find unused command options")
 
     val findUnusedUseLocalClasspath = settingKey[Boolean]("Whether to use the local classpath for find-unused")
@@ -42,6 +43,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     val findUnusedPackages = settingKey[Seq[String]]("Packages to analyze with find unused")
 
+    @cacheLevel(include = Array.empty)
     val findUnusedOnFail = taskKey[Int => Unit]("Callback to run when any find-unused command fails")
 
     case class FindUnusedExclusion(
