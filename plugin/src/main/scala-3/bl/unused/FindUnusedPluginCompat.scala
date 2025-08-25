@@ -3,7 +3,7 @@ package bl.unused
 import sbt.*
 import sbt.Keys.*
 
-private[unused] trait FindUnusedPluginCompat extends sbt.util.CacheImplicits {
+private[unused] trait FindUnusedPluginCompat {
   export sbt.util.cacheLevel
 
   final lazy val findUnusedFullTestClasspathTask = Def.task {
