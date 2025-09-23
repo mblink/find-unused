@@ -5,7 +5,7 @@ Global / findUnusedOutputFile := Some((ThisBuild / baseDirectory).value / "outpu
 
 lazy val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := "3.7.1",
+  scalaVersion := "3.7.3",
 )
 
 lazy val a = project.in(file("a")).settings(commonSettings)
