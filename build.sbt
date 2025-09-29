@@ -7,7 +7,7 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.20"
-lazy val scala37 = "3.7.2"
+lazy val scala37 = "3.7.3"
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala37)
 
@@ -148,7 +148,7 @@ lazy val cli = project.in(file("cli"))
     name := "find-unused-cli",
     libraryDependencies ++= Seq(
       "com.lihaoyi" %% "mainargs" % "0.7.6",
-      "org.jline" % "jline" % "3.30.5",
+      "org.jline" % "jline" % "3.30.6",
     ),
     run / fork := true,
     assembly / aggregate := false,
@@ -166,7 +166,7 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
     case "2.12" => sbt1Version
-    case _ => "2.0.0-RC3"
+    case _ => "2.0.0-RC6"
   }
 
 lazy val plugin = project.in(file("plugin"))
