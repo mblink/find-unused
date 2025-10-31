@@ -11,8 +11,8 @@ lazy val scala37 = "3.7.3"
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala37)
 
-val java21 = JavaSpec.temurin("21")
-val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), java21)
+val java25 = JavaSpec.temurin("25")
+val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), JavaSpec.temurin("21"), java25)
 
 val isTag = "startsWith(github.ref, 'refs/tags/v')"
 
@@ -41,7 +41,7 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
 
-val shouldBuildCLI = isJava(21) ++ " && " ++ isScala(scala37) ++ " && github.event_name == 'push'"
+val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala37) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("scripted"), cond = Some(isScala(scala2))),
@@ -83,7 +83,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   id = "release",
   name = "Release",
   oses = List("ubuntu-latest"),
-  javas = List(java21),
+  javas = List(java25),
   scalas = List(scala37),
   cond = Some(isTag ++ " && github.event_name == 'push'"),
   needs = List("build"),
