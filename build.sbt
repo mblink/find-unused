@@ -134,7 +134,7 @@ lazy val core = project.in(file("core"))
       if (tastyQueryDev) Seq()
       else Seq("ch.epfl.scala" %% "tasty-query" % "1.6.1")
     ) ++ Seq(
-      "com.lihaoyi" %% "pprint" % "0.9.3",
+      "com.lihaoyi" %% "pprint" % "0.9.4",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
   )
@@ -147,7 +147,7 @@ lazy val cli = project.in(file("cli"))
   .settings(
     name := "find-unused-cli",
     libraryDependencies ++= Seq(
-      "com.lihaoyi" %% "mainargs" % "0.7.6",
+      "com.lihaoyi" %% "mainargs" % "0.7.7",
       "org.jline" % "jline" % "3.30.6",
     ),
     run / fork := true,
