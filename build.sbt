@@ -178,7 +178,7 @@ lazy val plugin = project.in(file("plugin"))
     crossScalaVersions := Seq(scala2, scala37),
     publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala37),
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala37),
-    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
+    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.9"),
     scriptedBufferLog := false,
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
