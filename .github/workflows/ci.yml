@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        scala: [2.12.20, 3.7.3]
+        scala: [2.13.17, 3.7.3]
         java:
           - temurin@11
           - temurin@17
@@ -81,7 +81,7 @@ jobs:
         run: sbt '++ ${{ matrix.scala }}' githubWorkflowCheck
 
       - name: scripted
-        if: matrix.scala == '2.12.20'
+        if: matrix.scala == '2.13.17'
         run: sbt '++ ${{ matrix.scala }}' test scripted
 
       - name: compile
