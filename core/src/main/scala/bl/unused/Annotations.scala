@@ -55,24 +55,6 @@ object Annotations {
       case _ => false
     }
 
-  private def ctorParamToParamAccessor(ctorParam: Symbol)(using ctx: Context): Option[Symbol] =
-    Option(ctorParam.owner)
-      .collect { case t: TermSymbol if Symbols.isConstructor(t) => t } // t is the class constructor
-      .flatMap(t => Option(t.owner))
-      .collect { case c: ClassSymbol => c } // c is the class
-      .flatMap(_.getMember(ctorParam.name)) // the result of getMember is the param accessor
-
-  private def paramAccessorToCtorParam(paramAccessor: Symbol)(using ctx: Context): Option[Symbol] =
-    Option(paramAccessor)
-      .collect { case t: TermSymbol if t.isParamAccessor => t }
-      .flatMap(t => Option(t.owner))
-      .collect { case c: ClassSymbol => c } // c is the parent class
-      .flatMap(_.declarations.find(Symbols.isConstructor))
-      .collect { case t: TermSymbol => t.tree } // t is the class constructor
-      .flatten
-      .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
-      .flatMap(_.collectFirst { case v if v.name == paramAccessor.name => v.symbol }) // v is a constructor param
-
   /**
    * Check the given Symbol for annotations that suppress unused warnings
    *
@@ -86,12 +68,12 @@ object Annotations {
    */
   def checkForUnused(sym: Symbol)(using ctx: Context): EnvR[References] = {
     // If the symbol is a class constructor parameter, attempt to find the corresponding param accessor in the class
-    val paramAccessorSym = ctorParamToParamAccessor(sym)
+    val paramAccessorSyms = Symbols.constructorParamToParamAccessors(sym)
     // If the symbol is a param accessor, attempt to find the corresponding constructor param in the class
-    val ctorParamSym = paramAccessorToCtorParam(sym)
+    val ctorParamSym = Symbols.paramAccessorToConstructorParam(sym)
 
     // Check all relevant symbols for unused annotations
-    val allSyms = (Set(sym) ++ paramAccessorSym ++ ctorParamSym).toList
+    val allSyms = (Set(sym) ++ paramAccessorSyms ++ ctorParamSym).toList
     val hasUnusedAnnotation = allSyms.exists(_.annotations.exists(isUnusedAnnotation))
 
     allSyms.foldMap(_.annotations.foldMap(a => Trees.references(a.tree))) |+| (
