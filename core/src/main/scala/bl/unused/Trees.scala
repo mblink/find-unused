@@ -83,10 +83,9 @@ object Trees {
         case Export(expr, selectors) => references(expr) |+| referencesL(selectors)
         case ExprPattern(expr) => references(expr)
         case i @ Ident(_) =>
-          Symbols.getFromIdent(i).toList.foldMap { sym =>
-            Symbols.withStaticOwners(sym).toList.foldMap(References.fromSymbol(_, References.used)) |+|
-              References.usedProxy(sym, Symbols.superParamSymbols(sym))
-          }
+          Symbols.getFromIdent(i).toList.foldMap(
+            Symbols.withStaticOwners(_).toList.foldMap(References.fromSymbol(_, References.used))
+          )
         case If(cond, thenPart, elsePart) => references(cond) |+| references(thenPart) |+| references(elsePart)
         case Import(expr, selectors) => references(expr) |+| referencesL(selectors)
         case ImportIdent(_) => References.empty

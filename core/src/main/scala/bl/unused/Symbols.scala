@@ -15,6 +15,9 @@ object Symbols {
   def isSynthetic(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermOrTypeSymbol => t.isSynthetic }.getOrElse(false)
 
+  def isParamOfSyntheticMethod(sym: Symbol): Boolean =
+    Option(sym.owner).collect { case t: TermSymbol if t.isMethod => t.isSynthetic }.getOrElse(false)
+
   def syntheticMemberOfCaseClass(sym: Symbol)(using ctx: Context): Option[ClassSymbol] =
     if (isSynthetic(sym))
       Option(sym.owner).flatMap {
@@ -54,7 +57,7 @@ object Symbols {
     Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
 
   def isValidDefinition(sym: Symbol): Boolean =
-    !isSynthetic(sym) && !isConstructor(sym) && !isDefaultParam(sym)
+    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym) && !isDefaultParam(sym)
 
   def isInPackage(pkgSyms: Set[PackageSymbol])(sym: Symbol): Boolean =
     sym match {
@@ -327,13 +330,32 @@ object Symbols {
     )
   }
 
+  def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
+    @annotation.tailrec
+    def go(acc: List[TermOrTypeSymbol], overriddenSyms: List[Symbol], addHead: Boolean): List[TermOrTypeSymbol] =
+      overriddenSyms match {
+        case Nil => acc
+        case (s: TermOrTypeSymbol) :: rest => go(if (addHead) s :: acc else acc, nextOverriddenSymbol(s).toList ++ rest, true)
+        case _ :: rest => go(acc, rest, true)
+      }
+
+    go(Nil, List(sym), false)
+  }
+
+  /**
+   * If the given `Symbol` is a parameter of a method that overrides at least one other,
+   * get the method and the methods it overrides in all of its parent classes.
+   */
+  def getMethodAndOverridesFromParam(sym: Symbol)(using ctx: Context): Set[Symbol] =
+    Option(sym.owner).collect { case t: TermSymbol => (t :: allOverriddenSymbols(t)).toSet[Symbol] }.getOrElse(Set())
+
   /**
    * If the given `Symbol` is a parameter of a method that overrides at least one other,
    * get the equivalent parameters from the methods in the parent classes.
    */
-  def superParamSymbols(sym: Symbol)(using ctx: Context): Set[Symbol] =
+  def getSuperParamsFromParam(sym: Symbol)(using ctx: Context): Set[Symbol] =
     Option(sym.owner).flatMap {
-      case t: TermSymbol => Some(t.allOverriddenSymbols).filter(_.nonEmpty).map((t, _))
+      case t: TermSymbol => Some(allOverriddenSymbols(t).collect { case t: TermSymbol => t }).filter(_.nonEmpty).map((t, _))
       case _ => None
     }.fold(Set()) { (t, overrides) =>
       lazy val superParams = overrides.toList.map(_.paramSymss.flatMap(_.merge))
@@ -370,14 +392,6 @@ object Symbols {
       }
   }
 
-  private object OverrideMethodParam {
-    def unapply(sym: Symbol)(using ctx: Context): Boolean =
-      Option(sym.owner)
-        .collect { case t: TermSymbol => t }
-        .flatMap(Symbols.nextOverriddenSymbol)
-        .nonEmpty
-  }
-
   private object RefinementClass {
     def unapply(sym: Symbol): Boolean = Some(sym).collect { case c: ClassSymbol => c.isRefinementClass }.getOrElse(false)
   }
@@ -410,13 +424,8 @@ object Symbols {
                 case DefaultParam() => References.empty
                 case _ => References.fromSymbol(t, References.defined)
               }) |+|
-                (t match {
-                  // Consider params of override methods used
-                  case OverrideMethodParam() =>
-                    References.fromSymbol(t, References.used)
-                  case _ =>
-                    References.empty
-                }) |+|
+                References.usedProxy(getMethodAndOverridesFromParam(t).map((_, Set(t))).toMap) |+|
+                References.usedProxy(t, getSuperParamsFromParam(t)) |+|
                 References.usedProxy(constructorParamToParamAccessors(t).map((_, Set(t))).toMap)
 
             case p: PackageSymbol =>
