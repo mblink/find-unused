@@ -451,8 +451,7 @@ object Symbols {
                   case TypeMemberDefinition.AbstractType(bounds) =>
                     Types.typeBoundsTypes(bounds).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used))
                   case TypeMemberDefinition.OpaqueTypeAlias(bounds, tpe) =>
-                    Types.typeBoundsTypes(bounds).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used)) |+|
-                      Types.symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
+                    (tpe :: Types.typeBoundsTypes(bounds)).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used))
                 })
 
             case _: (ClassTypeParamSymbol | LocalTypeParamSymbol) => References.empty
