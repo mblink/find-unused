@@ -15,6 +15,9 @@ object Symbols {
   def isSynthetic(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermOrTypeSymbol => t.isSynthetic }.getOrElse(false)
 
+  def isParamOfSyntheticMethod(sym: Symbol): Boolean =
+    Option(sym.owner).collect { case t: TermSymbol if t.isMethod => t.isSynthetic }.getOrElse(false)
+
   def syntheticMemberOfCaseClass(sym: Symbol)(using ctx: Context): Option[ClassSymbol] =
     if (isSynthetic(sym))
       Option(sym.owner).flatMap {
@@ -29,6 +32,24 @@ object Symbols {
 
   def isConstructor(sym: Symbol): Boolean = sym.name == nme.Constructor
 
+  def constructorParamToParamAccessors(ctorParam: Symbol)(using ctx: Context): Set[Symbol] =
+    Option(ctorParam.owner)
+      .collect { case t: TermSymbol if Symbols.isConstructor(t) => t } // t is the class constructor
+      .flatMap(t => Option(t.owner))
+      .collect { case c: ClassSymbol => c } // c is the class
+      .fold(Set())(c => c.getDecl(ctorParam.name).toSet ++ c.getMember(ctorParam.name).toSet) // getDecl/getMember find the param accessors
+
+  def paramAccessorToConstructorParam(paramAccessor: Symbol)(using ctx: Context): Option[Symbol] =
+    Option(paramAccessor)
+      .collect { case t: TermSymbol if t.isParamAccessor => t }
+      .flatMap(t => Option(t.owner))
+      .collect { case c: ClassSymbol => c } // c is the parent class
+      .flatMap(_.declarations.find(Symbols.isConstructor))
+      .collect { case t: TermSymbol => t.tree } // t is the class constructor
+      .flatten
+      .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
+      .flatMap(_.collectFirst { case v if v.name == paramAccessor.name => v.symbol }) // v is a constructor param
+
   def isDefaultParam(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isParamWithDefault }.getOrElse(false)
 
@@ -36,7 +57,7 @@ object Symbols {
     Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
 
   def isValidDefinition(sym: Symbol): Boolean =
-    !isSynthetic(sym) && !isConstructor(sym) && !isDefaultParam(sym)
+    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym) && !isDefaultParam(sym)
 
   def isInPackage(pkgSyms: Set[PackageSymbol])(sym: Symbol): Boolean =
     sym match {
@@ -309,6 +330,40 @@ object Symbols {
     )
   }
 
+  def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
+    @annotation.tailrec
+    def go(acc: List[TermOrTypeSymbol], overriddenSyms: List[Symbol], addHead: Boolean): List[TermOrTypeSymbol] =
+      overriddenSyms match {
+        case Nil => acc
+        case (s: TermOrTypeSymbol) :: rest => go(if (addHead) s :: acc else acc, nextOverriddenSymbol(s).toList ++ rest, true)
+        case _ :: rest => go(acc, rest, true)
+      }
+
+    go(Nil, List(sym), false)
+  }
+
+  /**
+   * If the given `Symbol` is a parameter of a method that overrides at least one other,
+   * get the method and the methods it overrides in all of its parent classes.
+   */
+  def getMethodAndOverridesFromParam(sym: Symbol)(using ctx: Context): Set[Symbol] =
+    Option(sym.owner).collect { case t: TermSymbol => (t :: allOverriddenSymbols(t)).toSet[Symbol] }.getOrElse(Set())
+
+  /**
+   * If the given `Symbol` is a parameter of a method that overrides at least one other,
+   * get the equivalent parameters from the methods in the parent classes.
+   */
+  def getSuperParamsFromParam(sym: Symbol)(using ctx: Context): Set[Symbol] =
+    Option(sym.owner).flatMap {
+      case t: TermSymbol => Some(allOverriddenSymbols(t).collect { case t: TermSymbol => t }).filter(_.nonEmpty).map((t, _))
+      case _ => None
+    }.fold(Set()) { (t, overrides) =>
+      lazy val superParams = overrides.toList.map(_.paramSymss.flatMap(_.merge))
+      t.paramSymss.flatMap(_.merge).zipWithIndex.find(_._1 == sym).fold(Set())((_, i) =>
+        superParams.flatMap(_.lift(i)).toSet[Symbol]
+      )
+    }
+
   // Does the given Symbol or its owner have a DefaultGetterName as its name?
   // It seems like `def`s with default params are duplicated as `DefDef`s with a `name` that's a `DefaultGetterParam`
   private object DefaultParam {
@@ -335,22 +390,6 @@ object Symbols {
           }
         case _ => false
       }
-  }
-
-  private object AbstractMember {
-    def unapply(sym: Symbol): Boolean = Some(sym).collect { case t: TermSymbol => t.isAbstractMember }.getOrElse(false)
-  }
-
-  private object AbstractMethodParam {
-    def unapply(sym: Symbol): Boolean = Option(sym.owner).fold(false)(AbstractMember.unapply)
-  }
-
-  private object OverrideMethodParam {
-    def unapply(sym: Symbol)(using ctx: Context): Boolean =
-      Option(sym.owner)
-        .collect { case t: TermSymbol => t }
-        .flatMap(Symbols.nextOverriddenSymbol)
-        .nonEmpty
   }
 
   private object RefinementClass {
@@ -385,14 +424,9 @@ object Symbols {
                 case DefaultParam() => References.empty
                 case _ => References.fromSymbol(t, References.defined)
               }) |+|
-                (t match {
-                  // Consider abstract members, params of abstract methods, and params of override methods used
-                  case AbstractMember() | AbstractMethodParam() | OverrideMethodParam() =>
-                    References.fromSymbol(t, References.used)
-                  case _ =>
-                    References.empty
-                }) |+|
-                t.tree.fold(References.empty)(Trees.references)
+                References.usedProxy(getMethodAndOverridesFromParam(t).map((_, Set(t))).toMap) |+|
+                References.usedProxy(t, getSuperParamsFromParam(t)) |+|
+                References.usedProxy(constructorParamToParamAccessors(t).map((_, Set(t))).toMap)
 
             case p: PackageSymbol =>
               if (debug) println(s"*********** PackageSymbol: ${name(p)}")
@@ -417,8 +451,7 @@ object Symbols {
                   case TypeMemberDefinition.AbstractType(bounds) =>
                     Types.typeBoundsTypes(bounds).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used))
                   case TypeMemberDefinition.OpaqueTypeAlias(bounds, tpe) =>
-                    Types.typeBoundsTypes(bounds).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used)) |+|
-                      Types.symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
+                    (tpe :: Types.typeBoundsTypes(bounds)).flatMap(Types.symbols).foldMap(References.fromSymbol(_, References.used))
                 })
 
             case _: (ClassTypeParamSymbol | LocalTypeParamSymbol) => References.empty

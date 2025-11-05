@@ -44,8 +44,8 @@ object FindUnusedCli {
     private def symMatches(symName: String): Boolean =
       sym.forall(_.findFirstIn(symName).nonEmpty)
 
-    def matches(pos: Option[String], symName: String): Boolean =
-      srcMatches(pos) && symMatches(symName)
+    def matches(sym: Sym): Boolean =
+      srcMatches(sym.pos) && symMatches(sym.name)
   }
 
   object Exclusion {
@@ -107,16 +107,17 @@ object FindUnusedCli {
       val unused = refs.computeUnused
         .pipe(l =>
           if (args.exclusion.nonEmpty)
-            l.filterNot((name, pos) => args.exclusion.exists(_.matches(pos, name)))
+            l.filterNot(sym => args.exclusion.exists(_.matches(sym)))
           else
             l
         )
+        .toList
         .sortBy {
-          case (name, Some(SourcePos(file, line, col))) => (file, line, col, name)
-          case (name, Some(pos)) => (pos, 0, 0, name)
-          case (name, None) => (name, 0, 0, "")
+          case Sym(_, name, Some(SourcePos(file, line, col))) => (file, line, col, name)
+          case Sym(_, name, Some(pos)) => (pos, 0, 0, name)
+          case Sym(_, name, None) => (name, 0, 0, "")
         }
-        .map((name, pos) => (name, pos.getOrElse("")))
+        .map(sym => (sym.name, sym.pos.getOrElse("")))
 
       val hasUnused = unused.lengthIs > 0
 

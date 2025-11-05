@@ -1,5 +1,7 @@
 package bl.unused
 
+import cats.syntax.apply.*
+import cats.syntax.either.*
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
 import tastyquery.Contexts.*
@@ -37,9 +39,24 @@ object Trees {
       case Some(cls) =>
         EnvR((env, syms) =>
           refs.run(env.copy(symbolIsValid = s => env.symbolIsValid(s) && !Symbols.isSyntheticMemberOfCaseClass(cls, s)), syms)
-        ).map(_.removeUsed(cls).addUsedProxy(sym, cls))
+        ).flatMap(_.removeUsed(cls).addUsedProxy(sym, Set(cls)))
       case None => refs
     }
+
+  /**
+   * If this `Lambda` represents an implementation of a trait/class using single abstract method (SAM) syntax, we consider
+   * the parameters of the method in the trait/class used when the parameters of the lambda are used.
+   */
+  private def singleAbstractMethodReferences(l: Lambda)(using ctx: Context): EnvR[References] = {
+    val thisParamsO = Some(l.meth.symbol).collect { case t: TermSymbol => t.paramSymss.flatMap(_.merge) }
+    val superParamsO = Either.catchNonFatal(l.samClassSymbol).toOption
+      .map(_.declarations.collect { case t: TermSymbol if t.isMethod && t.isAbstractMember && !Symbols.isConstructor(t) => t })
+      .collect { case t :: Nil => t.paramSymss.flatMap(_.merge) }
+
+    (thisParamsO, superParamsO).tupled.fold(References.empty)((thisParams, superParams) =>
+      References.usedProxy(thisParams.lazyZip(superParams).map((t, s) => (t, Set(s))).toMap)
+    )
+  }
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     EnvR.debug.flatMap { debug =>
@@ -78,7 +95,7 @@ object Trees {
         case i @ InlinedTypeTree(caller, expansion) => Types.prefixReferences(i.toPrefix) |+| referencesO(caller) |+| references(expansion)
         case InlineIf(cond, thenPart, elsePart) => references(cond) |+| references(thenPart) |+| references(elsePart)
         case InlineMatch(selector, cases) => referencesO(selector) |+| referencesL(cases)
-        case Lambda(meth, tpt) => references(meth) |+| referencesO(tpt)
+        case l @ Lambda(meth, tpt) => references(meth) |+| referencesO(tpt) |+| singleAbstractMethodReferences(l)
         case Literal(_) => References.empty
         case Match(selector, cases) => references(selector) |+| referencesL(cases)
         case MatchTypeTree(bound, selector, cases) => references(bound) |+| references(selector) |+| referencesL(cases)

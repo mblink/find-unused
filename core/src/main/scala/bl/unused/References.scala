@@ -1,58 +1,113 @@
 package bl.unused
 
-import cats.Monoid
+import cats.{Monoid, Order}
+import cats.data.NonEmptySet
 import cats.syntax.applicative.*
+import cats.syntax.eq.*
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
+import cats.syntax.set.*
+import cats.syntax.traverse.*
+import scala.collection.mutable
+import scala.collection.immutable.SortedSet
+import scala.util.chaining.*
 import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
 
+sealed case class Sym private (underlyingHashCode: Int, name: String, pos: Option[String])
+object Sym {
+  given order: Order[Sym] = Order.by(_.underlyingHashCode)
+  given ordering: Ordering[Sym] = order.toOrdering
+
+  private val cache = mutable.Map.empty[Symbol, Sym]
+
+  private def cached(sym: Symbol)(compute: => EnvR[Sym]): EnvR[Sym] =
+    cache.synchronized(cache.get(sym).fold(compute.map(s => cache.put(sym, s).pipe(_ => s)))(_.pure[EnvR]))
+
+  def fromSymbol(sym: Symbol): EnvR[Sym] =
+    cached(sym)(EnvR.noSeenSymbols(env => new Sym(
+      underlyingHashCode = sym.hashCode,
+      name = Symbols.name(sym),
+      pos = sym.tree.map(t => Positions.format(env.rootDirectory, t.pos)),
+    )))
+}
+
 case class References(
-  defined: Map[Int, (String, Option[String])],
-  used: Set[Int],
+  defined: Set[Sym],
+  used: Set[Sym],
   // If the symbol represented by the map key is used, also mark the symbol represented by the map value as used
-  usedProxy: Map[Int, Int],
+  usedProxy: Map[Sym, NonEmptySet[Sym]],
 ) {
-  final def removeUsed(sym: Symbol): References =
-    copy(used = used - sym.hashCode)
+  final def removeUsed(sym: Symbol): References = {
+    val c = sym.hashCode
+    copy(used = used.filterNot(_.underlyingHashCode === c))
+  }
 
-  final def addUsedProxy(ifUsed: Symbol, thenUsed: Symbol): References =
-    copy(usedProxy = usedProxy + (ifUsed.hashCode -> thenUsed.hashCode))
+  final def addUsedProxy(m: Map[Symbol, Set[Symbol]]): EnvR[References] =
+    m.toList.foldMapM((s, ss) =>
+      ss.toList.traverse(Sym.fromSymbol).flatMap(_.to(SortedSet).toNes.fold(Map().pure[EnvR])(ss =>
+        Sym.fromSymbol(s).map(s => Map(s -> ss))
+      ))
+    ).map(m => copy(usedProxy = usedProxy |+| m))
 
-  final lazy val computeUnused: List[(String, Option[String])] = {
-    val allUsed = usedProxy.foldLeft(used) { case (acc, (k, v)) => if (acc.contains(k)) acc + v else acc }
-    defined.collect { case (code, t) if !allUsed.contains(code) => t }.toList
+  final def addUsedProxy(ifUsed: Symbol, thenUsed: Set[Symbol]): EnvR[References] = addUsedProxy(Map(ifUsed -> thenUsed))
+
+  final lazy val reverseUsedProxy: Map[Sym, NonEmptySet[Sym]] =
+    usedProxy.toList.foldMap((ifUsed, thenUsed) => thenUsed.foldMap(s => Map(s -> NonEmptySet.one(ifUsed))))
+
+  private def allSymsToCheckForUsage(sym: Sym): NonEmptySet[Sym] = {
+    @annotation.tailrec
+    def go(acc: NonEmptySet[Sym], syms: List[Sym]): NonEmptySet[Sym] =
+      syms match {
+        case Nil => acc
+        case s :: rest =>
+          reverseUsedProxy.get(s) match {
+            case Some(proxySyms) => go(acc ++ proxySyms, rest ++ proxySyms.toSortedSet)
+            case None => go(acc, rest)
+          }
+      }
+
+    go(NonEmptySet.one(sym), List(sym))
+  }
+
+  final lazy val computeUnused: Set[Sym] = {
+    val allUsed = usedProxy.foldLeft(used) { case (acc, (k, v)) =>
+      if (allSymsToCheckForUsage(k).exists(acc.contains)) acc ++ v.toSortedSet else acc
+    }
+    defined.filterNot(allUsed.contains)
   }
 }
 
 object References {
   given monoid: Monoid[References] =
     Monoid.instance(
-      References(Map.empty, Set.empty, Map.empty),
-      (x, y) => References(x.defined ++ y.defined, x.used ++ y.used, x.usedProxy ++ y.usedProxy),
+      References(Set.empty, Set.empty, Map.empty),
+      (x, y) => References(x.defined ++ y.defined, x.used ++ y.used, x.usedProxy |+| y.usedProxy),
     )
 
-  lazy val empty: EnvR[References] = EnvR.noSeenSymbols(_ => monoid.empty)
+  lazy val empty: EnvR[References] = monoid.empty.pure[EnvR]
 
   val defined = (sym: Symbol) => (ctx: Context) ?=>
     if (Symbols.isValidDefinition(sym))
-      EnvR.noSeenSymbols { env =>
-        References(
-          defined = Map(sym.hashCode -> (Symbols.name(sym), sym.tree.map(t => Positions.format(env.rootDirectory, t.pos)))),
-          used = sym match {
-            // If a symbol overrides another, consider it used
-            // This accounts for cases where a term is used in a parent class, but not in the subclass
-            case t: TermOrTypeSymbol => Symbols.nextOverriddenSymbol(t).fold(Set.empty)(_ => Set(t.hashCode))
-            case _ => Set.empty
-          },
-          usedProxy = Map.empty
-        )
-      } |+| Annotations.checkForUnused(sym)
+      (for {
+        defSym <- Sym.fromSymbol(sym)
+        usedSyms <- sym match {
+          // If a symbol overrides another, consider it used
+          // This accounts for cases where a term is used in a parent class, but not in the subclass
+          case t: TermOrTypeSymbol =>
+            Symbols.nextOverriddenSymbol(t).fold(Set.empty.pure[EnvR])(_ => Sym.fromSymbol(t).map(Set(_)))
+          case _ => Set.empty.pure[EnvR]
+        }
+        refs = References(defined = Set(defSym), used = usedSyms, usedProxy = Map.empty)
+      } yield refs) |+| Annotations.checkForUnused(sym)
     else
       empty
 
   val used = (sym: Symbol) => (ctx: Context) ?=>
-    References(Map.empty, Set(sym.hashCode), Map.empty).pure[EnvR]
+    Sym.fromSymbol(sym).map(s => References(Set.empty, Set(s), Map.empty))
+
+  def usedProxy(m: Map[Symbol, Set[Symbol]]): EnvR[References] = empty.flatMap(_.addUsedProxy(m))
+  def usedProxy(ifUsed: Symbol, thenUsed: Set[Symbol]): EnvR[References] = empty.flatMap(_.addUsedProxy(ifUsed, thenUsed))
 
   def fromSymbol(
     sym: Symbol,
