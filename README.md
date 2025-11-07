@@ -14,6 +14,9 @@ See below for more details on setup and use.
 - [Usage](#usage)
   - [sbt plugin](#sbt-plugin-1)
   - [Standalone CLI](#standalone-cli-1)
+    - [Example usage](#example-usage)
+- [Exclusions](#exclusions)
+  - [Usage in sbt plugin](#usage-in-sbt-plugin)
 - [Known issues](#known-issues)
   - [`given`s/`implicit`s summoned with `inline`/macro methods](#givensimplicits-summoned-with-inlinemacro-methods)
   - [`transparent inline` methods](#transparent-inline-methods)
@@ -68,7 +71,48 @@ You can run the standalone CLI with:
 java -jar /path/to/find-unused.jar
 ```
 
-TODO - describe what needs to be passed for each command.
+There are a couple options you must pass, as well as some optional ones:
+
+|Option|Type|Description|
+|---|---|---|
+|`--package`|Required, repeated|The packages to analyze|
+|`--classpath`|Required, repeated|The full classpath of your code and all dependencies|
+|`--exclusion`|Optional, repeated|Code to exclude from unused warnings, see [Exclusions](#exclusions)|
+|`--root-directory`|Optional|The path to the root of your codebase; used when reporting code positions|
+
+#### Example usage
+
+```bash
+java -jar /path/to/find-unused.jar \
+  --root-directory /path/to/your/code \
+  --package com.example.foo \
+  --package com.example.bar \
+  --classpath "$HOME/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-lang/scala3-library_3/3.7.3/scala3-library_3-3.7.3.jar" \
+  --classpath ... \
+  --exclusion 'src=.*/src_managed/.*' \
+  --exclusion 'sym=^com\.example\.MyClass\.(foo|bar)$'
+```
+
+## Exclusions
+
+You may wish to exclude some code from being reported as unused. The tool supports two types of exclusions:
+
+|Name|Description|
+|---|---|
+|`src`|Exclude all code in files that match the given regex|
+|`sym`|Exclude all code whose symbols match the given regex|
+
+### Usage in sbt plugin
+
+You can define exclusions using the `findUnusedExclusions` setting:
+
+```scala
+Global / findUnusedExclusions := Seq(
+  FindUnusedExclusion(src = ".*/src_managed/.*".r),
+  FindUnusedExclusion(sym = """^com\\.example\\.MyClass\\.(foo|bar)$""".r),
+  FindUnusedExclusion(src = "...".r, sym = "...".r),
+)
+```
 
 ## Known issues
 
