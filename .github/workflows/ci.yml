@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        scala: [2.12.20, 3.7.3]
+        scala: [2.12.20, 3.7.4]
         java:
           - temurin@11
           - temurin@17
@@ -85,29 +85,29 @@ jobs:
         run: sbt '++ ${{ matrix.scala }}' test scripted
 
       - name: compile
-        if: matrix.scala == '3.7.3'
+        if: matrix.scala == '3.7.4'
         run: sbt '++ ${{ matrix.scala }}' Test/compile
 
       - name: Build CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.3' && github.event_name == 'push'
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.4' && github.event_name == 'push'
         env:
           FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME: ${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
         run: sbt '++ ${{ matrix.scala }}' cli/assembly
 
       - name: Copy CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.3' && github.event_name == 'push'
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.4' && github.event_name == 'push'
         run: |
           mkdir -p cli/artifacts/
           cp cli/target/scala-${{ matrix.scala }}/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
 
       - name: Attest CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.3' && github.event_name == 'push'
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.4' && github.event_name == 'push'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
 
       - name: Upload CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.3' && github.event_name == 'push'
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.7.4' && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
@@ -122,7 +122,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        scala: [3.7.3]
+        scala: [3.7.4]
         java: [temurin@25]
     runs-on: ${{ matrix.os }}
     steps:
