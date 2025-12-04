@@ -134,7 +134,7 @@ lazy val core = project.in(file("core"))
       if (tastyQueryDev) Seq()
       else Seq("ch.epfl.scala" %% "tasty-query" % "1.6.1")
     ) ++ Seq(
-      "com.lihaoyi" %% "pprint" % "0.9.5",
+      "com.lihaoyi" %% "pprint" % "0.9.6",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
   )
