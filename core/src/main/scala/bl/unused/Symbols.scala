@@ -7,7 +7,7 @@ import tastyquery.Contexts.Context
 import tastyquery.Names.*
 import tastyquery.Trees.*
 import tastyquery.Types.*
-import tastyquery.Signatures.Signature
+import tastyquery.Signatures.{ParamSig, Signature}
 import tastyquery.Symbols.*
 import tastyquery.SymbolsOps.*
 
@@ -130,12 +130,13 @@ object Symbols {
     * to not match the signature of the method definition.
     */
   private def signatureWithoutErasedParams(sym: TermSymbol)(using ctx: Context): Signature = {
-    val erasedParamIndices = sym.paramSymss.zipWithIndex.collect { case (Left(List(p)), i) if p.isErased => i }.toSet
+    val erasedParamIndices = sym.paramSymss.flatMap(_.merge).zipWithIndex.collect { case (t: TermSymbol, i) if t.isErased => i }.toSet
 
     if (erasedParamIndices.isEmpty) sym.signature
-    else sym.signature.copy(paramsSig = sym.signature.paramsSig.zipWithIndex.collect {
-      case (p, i) if !erasedParamIndices.contains(i) => p
-    })
+    else sym.signature.copy(paramsSig = sym.signature.paramsSig.foldLeft((0, List.empty[ParamSig])) {
+      case ((accIdx, accRes), p @ ParamSig.TypeLen(len)) => (accIdx + len, accRes :+ p)
+      case ((accIdx, accRes), p @ ParamSig.Term(_)) => (accIdx + 1, if (erasedParamIndices.contains(accIdx)) accRes else accRes :+ p)
+    }._2)
   }
 
   /** Find all symbols matching `name` in this `klass` and its parent classes */
