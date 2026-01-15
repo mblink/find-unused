@@ -7,9 +7,10 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.21"
-lazy val scala37 = "3.7.4"
+lazy val scala3ForSbt = "3.7.4"
+lazy val scala3ForLib = "3.8.1"
 
-ThisBuild / crossScalaVersions := Seq(scala2, scala37)
+ThisBuild / crossScalaVersions := Seq(scala2, scala3ForSbt, scala3ForLib)
 
 val java25 = JavaSpec.temurin("25")
 val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), JavaSpec.temurin("21"), java25)
@@ -41,11 +42,11 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
 
-val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala37) ++ " && github.event_name == 'push'"
+val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Sbt(List("test", "scripted"), name = Some("scripted"), cond = Some(isScala(scala2))),
-  WorkflowStep.Sbt(List("Test/compile"), name = Some("compile"), cond = Some(isScala(scala37))),
+  WorkflowStep.Sbt(List("Test/compile"), name = Some("compile"), cond = Some(isScala(scala3ForSbt))),
   WorkflowStep.Sbt(
     List("cli/assembly"),
     name = Some("Build CLI"),
@@ -84,7 +85,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   name = "Release",
   oses = List("ubuntu-latest"),
   javas = List(java25),
-  scalas = List(scala37),
+  scalas = List(scala3ForLib),
   cond = Some(isTag ++ " && github.event_name == 'push'"),
   needs = List("build"),
   steps = List(
@@ -112,8 +113,9 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
-  scalaVersion := scala37,
-  crossScalaVersions := Seq(scala37),
+  scalaVersion := scala3ForLib,
+  crossScalaVersions := Seq(scala3ForLib),
+  scalacOptions ~= (_.filterNot(Set("-Xfatal-warnings")) ++ Seq("-Werror")),
   licenses += License.Apache2,
   publish / skip := true,
 )
@@ -132,7 +134,7 @@ lazy val core = project.in(file("core"))
     name := "find-unused-core",
     libraryDependencies ++= (
       if (tastyQueryDev) Seq()
-      else Seq("ch.epfl.scala" %% "tasty-query" % "1.6.1")
+      else Seq("ch.epfl.scala" %% "tasty-query" % "1.7.0")
     ) ++ Seq(
       "com.lihaoyi" %% "pprint" % "0.9.6",
       "org.typelevel" %% "cats-core" % "2.13.0",
@@ -175,9 +177,9 @@ lazy val plugin = project.in(file("plugin"))
   .settings(
     name := "find-unused-plugin",
     scalaVersion := scala2,
-    crossScalaVersions := Seq(scala2, scala37),
-    publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala37),
-    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala37),
+    crossScalaVersions := Seq(scala2, scala3ForSbt),
+    publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
+    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
     scriptedBufferLog := false,
     scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
