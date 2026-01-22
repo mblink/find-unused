@@ -13,7 +13,7 @@ lazy val scala3ForLib = "3.8.1"
 ThisBuild / crossScalaVersions := Seq(scala2, scala3ForSbt, scala3ForLib)
 
 val java25 = JavaSpec.temurin("25")
-val javaVersions = Seq(JavaSpec.temurin("11"), JavaSpec.temurin("17"), JavaSpec.temurin("21"), java25)
+val javaVersions = Seq(JavaSpec.temurin("17"), JavaSpec.temurin("21"), java25)
 
 val isTag = "startsWith(github.ref, 'refs/tags/v')"
 
