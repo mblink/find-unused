@@ -10,7 +10,7 @@ lazy val scala2 = "2.12.21"
 lazy val scala3ForSbt = "3.7.4"
 lazy val scala3ForLib = "3.8.1"
 
-ThisBuild / crossScalaVersions := Seq(scala2, scala3ForSbt, scala3ForLib)
+ThisBuild / crossScalaVersions := Seq(scala2, scala3ForLib)
 
 val java25 = JavaSpec.temurin("25")
 val javaVersions = Seq(JavaSpec.temurin("17"), JavaSpec.temurin("21"), java25)
