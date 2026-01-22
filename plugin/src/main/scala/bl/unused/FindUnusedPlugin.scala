@@ -77,11 +77,11 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     val findUnusedAll = taskKey[Unit]("Find all unused terms")
 
-    val findUnusedExplicitsDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused explicits")
+    @transient val findUnusedExplicitsDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused explicits")
 
-    val findUnusedGivensDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused givens")
+    @transient val findUnusedGivensDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused givens")
 
-    val findUnusedAllDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused all")
+    @transient val findUnusedAllDebugConfig = taskKey[String]("Generate VS Code launch.json file to debug find-unused all")
   }
 
   import autoImport.*
