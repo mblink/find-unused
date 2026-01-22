@@ -45,8 +45,7 @@ def isScala(v: String) = s"matrix.scala == '$v'"
 val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
-  WorkflowStep.Sbt(List("test", "scripted"), name = Some("scripted"), cond = Some(isScala(scala2))),
-  WorkflowStep.Sbt(List("Test/compile"), name = Some("compile"), cond = Some(isScala(scala3ForSbt))),
+  WorkflowStep.Sbt(List("test", "scripted"), name = Some("scripted")),
   WorkflowStep.Sbt(
     List("cli/assembly"),
     name = Some("Build CLI"),

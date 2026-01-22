@@ -69,12 +69,7 @@ jobs:
         run: sbt '++ ${{ matrix.scala }}' githubWorkflowCheck
 
       - name: scripted
-        if: matrix.scala == '2.12.21'
         run: sbt '++ ${{ matrix.scala }}' test scripted
-
-      - name: compile
-        if: matrix.scala == '3.7.4'
-        run: sbt '++ ${{ matrix.scala }}' Test/compile
 
       - name: Build CLI
         if: matrix.java == 'temurin@25' && matrix.scala == '3.8.1' && github.event_name == 'push'
