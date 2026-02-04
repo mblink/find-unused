@@ -6,10 +6,12 @@ def quote(s: String): String = s""""$s""""
 def jsonObj(fields: (String, String)*): String = "{" ++ fields.map { case (k, v) => s"""${quote(k)}:$v""" }.mkString(",") ++ "}"
 def jsonArr(values: String*): String = "[" ++ values.mkString(",") ++ "]"
 
+@transient lazy val check = taskKey[Unit]("check")
+
 lazy val root = project.in(file(".")).settings(
   version := "0.1.0-SNAPSHOT",
   scalaVersion := "3.7.3",
-  TaskKey[Unit]("check") := {
+  check := {
     val classpath = findUnusedFullTestClasspath.value
     val expected = jsonObj(
       "version" -> quote("0.2.0"),
