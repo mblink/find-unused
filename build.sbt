@@ -114,7 +114,6 @@ lazy val commonSettings = Seq(
   organization := "bondlink",
   scalaVersion := scala3ForLib,
   crossScalaVersions := Seq(scala3ForLib),
-  scalacOptions ~= (_.filterNot(Set("-Xfatal-warnings")) ++ Seq("-Werror")),
   licenses += License.Apache2,
   publish / skip := true,
 )
