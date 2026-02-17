@@ -7,8 +7,8 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.21"
-lazy val scala3ForSbt = "3.7.4"
 lazy val scala3ForLib = "3.8.1"
+lazy val scala3ForSbt = scala3ForLib
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala3ForLib)
 
@@ -166,7 +166,7 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
     case "2.12" => sbt1Version
-    case _ => "2.0.0-RC8"
+    case _ => "2.0.0-RC9"
   }
 
 lazy val plugin = project.in(file("plugin"))
