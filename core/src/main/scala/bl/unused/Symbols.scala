@@ -72,13 +72,17 @@ object Symbols {
       case None => sym.displayFullName
     }).replace("$.", ".").stripSuffix("$")
 
-  def allMatchingSymbols(sym: Symbol)(using ctx: Context): List[Symbol] =
-    Option(sym.owner).fold(Nil) {
-      case c: ClassSymbol => c.declarations.filter(_.name.toString == sym.name.toString)
-      case p: PackageSymbol => p.declarations.filter(_.name.toString == sym.name.toString)
+  def matchingSymbolsIn(owner: Symbol, name: UnsignedName)(using ctx: Context): List[Symbol] =
+    Option(owner).fold(Nil) {
+      case c: ClassSymbol => c.declarations.filter(_.name.toString == name.toString)
+      case p: PackageSymbol => p.declarations.filter(_.name.toString == name.toString)
+      case t: TermSymbol if t.isModuleVal => t.moduleClass.fold(Nil)(matchingSymbolsIn(_, name))
       // I don't think TermSymbols have children...?
       case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => Nil
-    }.filterNot(_ == sym)
+    }
+
+  def allMatchingSymbols(sym: Symbol)(using ctx: Context): List[Symbol] =
+    matchingSymbolsIn(sym.owner, sym.name).filterNot(_ == sym)
 
   def debugDetails(message: String, sym: Symbol, indent: Int)(using ctx: Context): String = {
     val spaces = " " * indent
