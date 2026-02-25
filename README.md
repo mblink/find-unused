@@ -87,7 +87,7 @@ java -jar /path/to/find-unused.jar \
   --root-directory /path/to/your/code \
   --package com.example.foo \
   --package com.example.bar \
-  --classpath "$HOME/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-lang/scala-library/3.8.1/scala-library-3.8.1.jar" \
+  --classpath "$HOME/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-lang/scala-library/3.8.2/scala-library-3.8.2.jar" \
   --classpath ... \
   --exclusion 'src=.*/src_managed/.*' \
   --exclusion 'sym=^com\.example\.MyClass\.(foo|bar)$'
@@ -118,7 +118,7 @@ Global / findUnusedExclusions := Seq(
 
 ### `given`s/`implicit`s summoned with `inline`/macro methods
 
-As of Scala 3.8.1, the TASTy representation of some `inline` and macro-related methods does not include references to
+As of Scala 3.8.2, the TASTy representation of some `inline` and macro-related methods does not include references to
 the `given`/`implicit` instances that they summon -- https://github.com/scala/scala3/issues/22701
 
 This includes:
@@ -145,7 +145,7 @@ required and used by `Bar`'s derived `Decoder`.
 
 ### `transparent inline` methods
 
-As of Scala 3.8.1, the TASTy representation of calls to `transparent inline` methods is equivalent to the TASTy
+As of Scala 3.8.2, the TASTy representation of calls to `transparent inline` methods is equivalent to the TASTy
 representation of the body of the `transparent inline` method -- there is no indication that the `transparent inline`
 method was called.
 

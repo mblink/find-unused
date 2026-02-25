@@ -180,7 +180,7 @@ lazy val plugin = project.in(file("plugin"))
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
     scriptedBufferLog := false,
-    scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
+    scriptedLaunchOpts ++= Seq(s"-Dplugin.version=${version.value}", s"-Dscala.version=$scala3ForLib"),
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
     libraryDependencies ++= Seq(
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)

@@ -59,8 +59,8 @@ object Trees {
   }
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
-    EnvR.debug.flatMap { debug =>
-      if (debug) println(s"************* tree: ${Debug.printer(tree)}")
+    EnvR.env.flatMap { env =>
+      if (env.debug) println(s"************* tree: ${Debug.printer(tree)}")
       tree match {
         case Alternative(trees) => referencesL(trees)
         case AnnotatedTypeTree(tpt, annotation) => references(tpt) |+| references(annotation)
@@ -80,7 +80,17 @@ object Trees {
               referencesO(rhs)
           )
         case ExplicitTypeBoundsTree(low, high) => references(low) |+| references(high)
-        case Export(expr, selectors) => references(expr) |+| referencesL(selectors)
+        case Export(expr, selectors) =>
+          val exprSyms = expr match {
+            case i: Ident => Symbols.getFromIdent(i)
+            case s: Select => Symbols.getFromSelect(s)
+            case _ => Set()
+          }
+          val proxiedSyms = selectors.foldMap(s =>
+            Map(Positions.format(env.rootDirectory, s.pos) -> exprSyms.flatMap(Symbols.matchingSymbolsIn(_, s.imported.name)).toSet)
+          )
+
+          References.exportProxy(proxiedSyms) |+| references(expr) |+| referencesL(selectors)
         case ExprPattern(expr) => references(expr)
         case i @ Ident(_) =>
           Symbols.getFromIdent(i).toList.foldMap(

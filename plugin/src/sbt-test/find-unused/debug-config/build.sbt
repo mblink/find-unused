@@ -10,7 +10,7 @@ def jsonArr(values: String*): String = "[" ++ values.mkString(",") ++ "]"
 
 lazy val root = project.in(file(".")).settings(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := "3.8.1",
+  scalaVersion := sys.props("scala.version"),
   check := {
     val classpath = findUnusedFullTestClasspath.value
     val expected = jsonObj(
