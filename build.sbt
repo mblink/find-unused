@@ -7,7 +7,7 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.21"
-lazy val scala3ForLib = "3.8.1"
+lazy val scala3ForLib = "3.8.2"
 lazy val scala3ForSbt = scala3ForLib
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala3ForLib)
