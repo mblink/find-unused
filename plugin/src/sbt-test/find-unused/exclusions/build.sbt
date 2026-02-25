@@ -9,7 +9,7 @@ Global / findUnusedExclusions := Seq(
 
 lazy val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := "3.8.1",
+  scalaVersion := "3.8.2",
 )
 
 lazy val a = project.in(file("a")).settings(commonSettings)

@@ -5,5 +5,5 @@ Global / findUnusedOutputFile := Some((ThisBuild / baseDirectory).value / "outpu
 
 lazy val root = project.in(file(".")).settings(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := "3.8.1",
+  scalaVersion := "3.8.2",
 )
