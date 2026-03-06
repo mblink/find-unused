@@ -5,7 +5,7 @@ Global / findUnusedOutputFile := Some((ThisBuild / baseDirectory).value / "outpu
 
 lazy val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := "3.8.1",
+  scalaVersion := sys.props("scala.version"),
   scalacOptions += "-language:experimental.erasedDefinitions",
 )
 
