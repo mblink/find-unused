@@ -166,7 +166,7 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
     case "2.12" => sbt1Version
-    case _ => "2.0.0-RC9"
+    case _ => "2.0.0-RC10"
   }
 
 lazy val plugin = project.in(file("plugin"))
@@ -184,6 +184,7 @@ lazy val plugin = project.in(file("plugin"))
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
     libraryDependencies ++= Seq(
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)
+        .exclude("org.scala-lang.modules", "scala-collection-compat_2.13")
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),
     ),
     cliClasspath := (cli / Runtime / fullClasspath).value.map(_.data),
