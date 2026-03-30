@@ -7,7 +7,7 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.21"
-lazy val scala3ForLib = "3.8.2"
+lazy val scala3ForLib = "3.8.3"
 lazy val scala3ForSbt = scala3ForLib
 
 ThisBuild / crossScalaVersions := Seq(scala2, scala3ForLib)
@@ -180,7 +180,7 @@ lazy val plugin = project.in(file("plugin"))
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
     scriptedBufferLog := false,
-    scriptedLaunchOpts += s"-Dplugin.version=${version.value}",
+    scriptedLaunchOpts ++= Seq(s"-Dplugin.version=${version.value}", s"-Dscala.version=$scala3ForLib"),
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
     libraryDependencies ++= Seq(
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)
