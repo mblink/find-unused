@@ -17,9 +17,9 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
   object autoImport {
     val findUnused = settingKey[Unit]("Find unused")
 
-    val findUnusedCliDownload = taskKey[Seq[File]]("Find unused CLI download")
+    @transient val findUnusedCliDownload = taskKey[Seq[File]]("Find unused CLI download")
 
-    val findUnusedCliClasspath = taskKey[Seq[File]]("Find unused CLI classpath")
+    @transient val findUnusedCliClasspath = taskKey[Seq[File]]("Find unused CLI classpath")
 
     @cacheLevel(include = Array.empty)
     val findUnusedCommandOptions = taskKey[(ForkOptions, Seq[String], String => Seq[String])]("Find unused command options")
