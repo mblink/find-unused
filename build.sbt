@@ -132,7 +132,7 @@ lazy val core = project.in(file("core"))
     name := "find-unused-core",
     libraryDependencies ++= (
       if (tastyQueryDev) Seq()
-      else Seq("ch.epfl.scala" %% "tasty-query" % "1.7.0")
+      else Seq("ch.epfl.scala" %% "tasty-query" % "1.8.0")
     ) ++ Seq(
       "com.lihaoyi" %% "pprint" % "0.9.6",
       "org.typelevel" %% "cats-core" % "2.13.0",
