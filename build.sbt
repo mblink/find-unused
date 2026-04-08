@@ -148,7 +148,7 @@ lazy val cli = project.in(file("cli"))
     name := "find-unused-cli",
     libraryDependencies ++= Seq(
       "com.lihaoyi" %% "mainargs" % "0.7.8",
-      "org.jline" % "jline" % "4.0.11",
+      "org.jline" % "jline" % "4.0.12",
     ),
     run / fork := true,
     assembly / aggregate := false,
