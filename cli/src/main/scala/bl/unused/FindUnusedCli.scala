@@ -127,7 +127,7 @@ object FindUnusedCli {
           case None =>
             (
               args.width
-                .orElse(Using(TerminalBuilder.builder.system(true).dumb(false).build)(_.getWidth).toOption)
+                .orElse(Using(TerminalBuilder.builder.system(true).dumb(false).build)(_.getColumns).toOption)
                 .filter(_ > 0)
                 .getOrElse(80),
               !args.noColor.value && sys.env.get("NO_COLOR").isEmpty
