@@ -62,6 +62,7 @@ object FindUnusedCli {
                   case _ => s"Invalid exclusion filter: $filter".asLeft[Exclusion]
                 }
               )
+            case _ => s"Invalid exclusion filter: $strs".asLeft[Exclusion]
           }
       }
   }
