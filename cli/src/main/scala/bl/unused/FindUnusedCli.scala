@@ -150,7 +150,7 @@ object FindUnusedCli {
         }
         val (instanceWidth, locationWidth) = (idealInstanceWidth, idealLocationWidth) match {
           case t @ (inst, loc) if inst + loc + paddingWidth < tableWidth => t
-          case (inst, loc) =>
+          case (inst, _) =>
             val instWidth = math.min(inst, maxInstanceWidth)
             val locWidth = tableWidth - instWidth - paddingWidth
             (instWidth, locWidth)
