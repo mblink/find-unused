@@ -10,7 +10,7 @@ lazy val scala2 = "2.12.21"
 lazy val scala3ForLib = "3.8.4"
 lazy val scala3ForSbt = scala3ForLib
 
-ThisBuild / crossScalaVersions := Seq(scala2, scala3ForLib)
+ThisBuild / scalaVersion := scala3ForLib
 
 val java25 = JavaSpec.temurin("25")
 val javaVersions = Seq(JavaSpec.temurin("17"), JavaSpec.temurin("21"), java25)
@@ -45,9 +45,9 @@ def isScala(v: String) = s"matrix.scala == '$v'"
 val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuild := Seq(
-  WorkflowStep.Sbt(List("test", "scripted"), name = Some("scripted")),
-  WorkflowStep.Sbt(
-    List("cli/assembly"),
+  WorkflowStep.Run(List("sbt 'test; scripted'"), name = Some("scripted")),
+  WorkflowStep.Run(
+    List("sbt cli3/assembly"),
     name = Some("Build CLI"),
     cond = Some(shouldBuildCLI),
     env = Map(cliAssemblyJarNameEnv -> cliName)
@@ -55,7 +55,7 @@ ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Run(
     List(
       s"mkdir -p $cliArtifacts",
-      "cp cli/target/scala-${{ matrix.scala }}/" ++ cliName ++ " " ++ cliPath,
+      "cp cli/target/jvm-3/" ++ cliName ++ " " ++ cliPath,
     ),
     name = Some("Copy CLI"),
     cond = Some(shouldBuildCLI),
@@ -112,8 +112,6 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
-  scalaVersion := scala3ForLib,
-  crossScalaVersions := Seq(scala3ForLib),
   licenses += License.Apache2,
   publish / skip := true,
 )
@@ -125,11 +123,14 @@ lazy val publishSettings = Seq(
   publishTo := Some("BondLink S3".at("s3://bondlink-maven-repo")),
 )
 
-lazy val core = project.in(file("core"))
-  .settings(commonSettings)
+def baseProj(id: String, nme: String, scalaVersions: Seq[String] = Seq(scala3ForLib)) =
+  sbt.internal.ProjectMatrix(id, file(id))
+    .jvmPlatform(scalaVersions = scalaVersions)
+    .settings(commonSettings ++ Seq(name := nme))
+
+lazy val core = baseProj("core", "find-unused-core")
   .settings(publishSettings)
   .settings(
-    name := "find-unused-core",
     libraryDependencies ++= (
       if (tastyQueryDev) Seq()
       else Seq("ch.epfl.scala" %% "tasty-query" % "1.8.0")
@@ -141,11 +142,9 @@ lazy val core = project.in(file("core"))
   .dependsOn((if (tastyQueryDev) Seq[ClasspathDep[ProjectReference]](tastyQuery) else Seq())*)
   .aggregate((if (tastyQueryDev) Seq(tastyQuery) else Seq())*)
 
-lazy val cli = project.in(file("cli"))
-  .settings(commonSettings)
+lazy val cli = baseProj("cli", "find-unused-cli")
   .settings(publishSettings)
   .settings(
-    name := "find-unused-cli",
     libraryDependencies ++= Seq(
       "com.lihaoyi" %% "mainargs" % "0.7.8",
       "org.jline" % "jline" % "4.1.3",
@@ -166,16 +165,13 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
     case "2.12" => sbt1Version
-    case _ => "2.0.0-RC12"
+    case _ => "2.0.0-RC15"
   }
 
-lazy val plugin = project.in(file("plugin"))
-  .settings(commonSettings)
+lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3ForSbt))
   .settings(publishSettings)
   .settings(
     name := "find-unused-plugin",
-    scalaVersion := scala2,
-    crossScalaVersions := Seq(scala2, scala3ForSbt),
     publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
@@ -187,7 +183,7 @@ lazy val plugin = project.in(file("plugin"))
         .exclude("org.scala-lang.modules", "scala-collection-compat_2.13")
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),
     ),
-    cliClasspath := (cli / Runtime / fullClasspath).value.map(_.data),
+    cliClasspath := (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(_.data),
     buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
     buildInfoPackage := "bl.unused",
   )
