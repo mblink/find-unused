@@ -120,7 +120,7 @@ commonSettings
 
 lazy val publishSettings = Seq(
   publish / skip := false,
-  publishTo := Some("BondLink S3".at("s3://bondlink-maven-repo")),
+  s3PublishBucket := "bondlink-maven-repo",
 )
 
 def baseProj(id: String, nme: String, scalaVersions: Seq[String] = Seq(scala3ForLib)) =
