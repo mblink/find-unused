@@ -165,7 +165,7 @@ lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
     case "2.12" => sbt1Version
-    case _ => "2.0.0-RC16"
+    case _ => "2.0.0"
   }
 
 lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3ForSbt))
