@@ -38,6 +38,7 @@ ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
 ThisBuild / githubWorkflowTargetBranches := Seq("main")
 ThisBuild / githubWorkflowTargetTags := Seq("v*")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
+ThisBuild / githubWorkflowUseSbtThinClient := true
 
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
