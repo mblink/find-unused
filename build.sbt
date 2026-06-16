@@ -183,7 +183,10 @@ lazy val plugin = baseProj(projectMatrix.in(file("plugin")), "find-unused-plugin
         .exclude("org.scala-lang.modules", "scala-collection-compat_2.13")
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),
     ),
-    cliClasspath := (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(_.data),
+    cliClasspath := Def.uncached {
+      val conv = fileConverter.value
+      (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(p => conv.toPath(p.data).toFile)
+    },
     buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
     buildInfoPackage := "bl.unused",
   )
