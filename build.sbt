@@ -123,12 +123,12 @@ lazy val publishSettings = Seq(
   s3PublishBucket := "bondlink-maven-repo",
 )
 
-def baseProj(id: String, nme: String, scalaVersions: Seq[String] = Seq(scala3ForLib)) =
-  sbt.internal.ProjectMatrix(id, file(id))
+def baseProj(matrix: ProjectMatrix, nme: String, scalaVersions: Seq[String] = Seq(scala3ForLib)) =
+  matrix
     .jvmPlatform(scalaVersions = scalaVersions)
     .settings(commonSettings ++ Seq(name := nme))
 
-lazy val core = baseProj("core", "find-unused-core")
+lazy val core = baseProj(projectMatrix.in(file("core")), "find-unused-core")
   .settings(publishSettings)
   .settings(
     libraryDependencies ++= (
@@ -142,7 +142,7 @@ lazy val core = baseProj("core", "find-unused-core")
   .dependsOn((if (tastyQueryDev) Seq[ClasspathDep[ProjectReference]](tastyQuery) else Seq())*)
   .aggregate((if (tastyQueryDev) Seq(tastyQuery) else Seq())*)
 
-lazy val cli = baseProj("cli", "find-unused-cli")
+lazy val cli = baseProj(projectMatrix.in(file("cli")), "find-unused-cli")
   .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
@@ -168,7 +168,7 @@ def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
     case _ => "2.0.0"
   }
 
-lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3ForSbt))
+lazy val plugin = baseProj(projectMatrix.in(file("plugin")), "find-unused-plugin", Seq(scala2, scala3ForSbt))
   .settings(publishSettings)
   .settings(
     name := "find-unused-plugin",
