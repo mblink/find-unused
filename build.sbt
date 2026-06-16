@@ -79,7 +79,7 @@ ThisBuild / githubWorkflowBuild := Seq(
   ),
 )
 
-ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
+ThisBuild / githubWorkflowAddedJobs ~= (_.filterNot(_.id == "release") :+ WorkflowJob(
   id = "release",
   name = "Release",
   oses = List("ubuntu-latest"),
@@ -108,7 +108,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
       ),
     ),
   ),
-)
+))
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
