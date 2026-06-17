@@ -163,10 +163,10 @@ lazy val cli = baseProj(projectMatrix.in(file("cli")), "find-unused-cli")
 
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
-def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
+def pluginSbtVersion(scalaBinaryVersion: String, sbt2Version: String): String =
   scalaBinaryVersion match {
-    case "2.12" => sbt1Version
-    case _ => "2.0.0"
+    case "3" => sbt2Version
+    case "2.12" => "1.9.0"
   }
 
 lazy val plugin = baseProj(projectMatrix.in(file("plugin")), "find-unused-plugin", Seq(scala2, scala3ForSbt))
@@ -175,7 +175,7 @@ lazy val plugin = baseProj(projectMatrix.in(file("plugin")), "find-unused-plugin
     name := "find-unused-plugin",
     publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
-    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
+    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "2.0.0"),
     scriptedBufferLog := false,
     scriptedLaunchOpts ++= Seq(s"-Dplugin.version=${version.value}", s"-Dscala.version=$scala3ForLib"),
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
