@@ -66,7 +66,7 @@ jobs:
         uses: sbt/setup-sbt@v1
 
       - name: Check that workflows are up to date
-        run: sbt '++ ${{ matrix.scala }}' githubWorkflowCheck
+        run: sbt --client '++ ${{ matrix.scala }}; githubWorkflowCheck'
 
       - name: scripted
         run: sbt 'test; scripted'

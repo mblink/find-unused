@@ -38,6 +38,7 @@ ThisBuild / githubWorkflowBuildMatrixFailFast := Some(false)
 ThisBuild / githubWorkflowTargetBranches := Seq("main")
 ThisBuild / githubWorkflowTargetTags := Seq("v*")
 ThisBuild / githubWorkflowPublishTargetBranches := Seq()
+ThisBuild / githubWorkflowUseSbtThinClient := true
 
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
@@ -79,7 +80,7 @@ ThisBuild / githubWorkflowBuild := Seq(
   ),
 )
 
-ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
+ThisBuild / githubWorkflowAddedJobs ~= (_.filterNot(_.id == "release") :+ WorkflowJob(
   id = "release",
   name = "Release",
   oses = List("ubuntu-latest"),
@@ -108,7 +109,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
       ),
     ),
   ),
-)
+))
 
 lazy val commonSettings = Seq(
   organization := "bondlink",
@@ -123,12 +124,12 @@ lazy val publishSettings = Seq(
   s3PublishBucket := "bondlink-maven-repo",
 )
 
-def baseProj(id: String, nme: String, scalaVersions: Seq[String] = Seq(scala3ForLib)) =
-  sbt.internal.ProjectMatrix(id, file(id))
+def baseProj(matrix: ProjectMatrix, nme: String, scalaVersions: Seq[String] = Seq(scala3ForLib)) =
+  matrix
     .jvmPlatform(scalaVersions = scalaVersions)
     .settings(commonSettings ++ Seq(name := nme))
 
-lazy val core = baseProj("core", "find-unused-core")
+lazy val core = baseProj(projectMatrix.in(file("core")), "find-unused-core")
   .settings(publishSettings)
   .settings(
     libraryDependencies ++= (
@@ -142,7 +143,7 @@ lazy val core = baseProj("core", "find-unused-core")
   .dependsOn((if (tastyQueryDev) Seq[ClasspathDep[ProjectReference]](tastyQuery) else Seq())*)
   .aggregate((if (tastyQueryDev) Seq(tastyQuery) else Seq())*)
 
-lazy val cli = baseProj("cli", "find-unused-cli")
+lazy val cli = baseProj(projectMatrix.in(file("cli")), "find-unused-cli")
   .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
@@ -162,19 +163,19 @@ lazy val cli = baseProj("cli", "find-unused-cli")
 
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
-def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
+def pluginSbtVersion(scalaBinaryVersion: String, sbt2Version: String): String =
   scalaBinaryVersion match {
-    case "2.12" => sbt1Version
-    case _ => "2.0.0"
+    case "3" => sbt2Version
+    case "2.12" => "1.9.0"
   }
 
-lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3ForSbt))
+lazy val plugin = baseProj(projectMatrix.in(file("plugin")), "find-unused-plugin", Seq(scala2, scala3ForSbt))
   .settings(publishSettings)
   .settings(
     name := "find-unused-plugin",
     publishConfiguration := publishConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
-    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
+    pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "2.0.0"),
     scriptedBufferLog := false,
     scriptedLaunchOpts ++= Seq(s"-Dplugin.version=${version.value}", s"-Dscala.version=$scala3ForLib"),
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
@@ -183,7 +184,10 @@ lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3For
         .exclude("org.scala-lang.modules", "scala-collection-compat_2.13")
         .exclude("org.scala-lang.modules", "scala-xml_2.13"),
     ),
-    cliClasspath := (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(_.data),
+    cliClasspath := Def.uncached {
+      val conv = fileConverter.value
+      (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(p => conv.toPath(p.data).toFile)
+    },
     buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
     buildInfoPackage := "bl.unused",
   )
