@@ -133,7 +133,7 @@ lazy val core = baseProj("core", "find-unused-core")
   .settings(
     libraryDependencies ++= (
       if (tastyQueryDev) Seq()
-      else Seq("ch.epfl.scala" %% "tasty-query" % "1.8.0")
+      else Seq("ch.epfl.scala" %% "tasty-query" % "1.9.0")
     ) ++ Seq(
       "com.lihaoyi" %% "pprint" % "0.9.6",
       "org.typelevel" %% "cats-core" % "2.13.0",
