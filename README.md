@@ -87,7 +87,7 @@ java -jar /path/to/find-unused.jar \
   --root-directory /path/to/your/code \
   --package com.example.foo \
   --package com.example.bar \
-  --classpath "$HOME/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-lang/scala-library/3.8.3/scala-library-3.8.3.jar" \
+  --classpath "$HOME/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/scala-lang/scala-library/3.10.0/scala-library-3.10.0.jar" \
   --classpath ... \
   --exclusion 'src=.*/src_managed/.*' \
   --exclusion 'sym=^com\.example\.MyClass\.(foo|bar)$'
@@ -168,7 +168,7 @@ The end result is that `transparent inline def`s are reported as unused even whe
 ### Lack of support for multiple Scala versions
 
 At the moment this tool only works when all projects in your build use the same Scala version, and that version is
-Scala 3.8.x.
+between Scala 3.8.x and 3.10.x.
 
 Support may be added in the future for multiple Scala versions within the same build or for older Scala 3 versions.
 

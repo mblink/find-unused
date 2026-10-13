@@ -7,8 +7,8 @@ lazy val tastyQuery = ProjectRef(file(sys.env("HOME")) / "tasty-query", "tastyQu
 lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.21"
-lazy val scala3ForLib = "3.8.4"
-lazy val scala3ForSbt = scala3ForLib
+lazy val scala3ForLib = "3.10.0"
+lazy val scala3ForSbt = "3.8.4"
 
 ThisBuild / scalaVersion := scala3ForLib
 
@@ -133,7 +133,7 @@ lazy val core = baseProj("core", "find-unused-core")
   .settings(
     libraryDependencies ++= (
       if (tastyQueryDev) Seq()
-      else Seq("ch.epfl.scala" %% "tasty-query" % "1.8.0")
+      else Seq("ch.epfl.scala" %% "tasty-query" % "1.10.0")
     ) ++ Seq(
       "com.lihaoyi" %% "pprint" % "0.9.6",
       "org.typelevel" %% "cats-core" % "2.13.0",
