@@ -9,6 +9,8 @@ lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 lazy val scala2 = "2.12.21"
 lazy val scala3ForLib = "3.10.0"
 lazy val scala3ForSbt = "3.8.4"
+lazy val scriptedScalaVersions = List("3.8.4", "3.9.0", scala3ForLib)
+lazy val scriptedScalaVersion = sys.props.getOrElse("scripted.scala.version", scala3ForLib)
 
 ThisBuild / scalaVersion := scala3ForLib
 
@@ -41,11 +43,14 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
+def isScriptedScala(v: String) = s"matrix.scriptedScala == '$v'"
 
-val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && github.event_name == 'push'"
+val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && " ++ isScriptedScala(scala3ForLib) ++ " && github.event_name == 'push'"
+
+ThisBuild / githubWorkflowBuildMatrixAdditions += "scriptedScala" -> scriptedScalaVersions
 
 ThisBuild / githubWorkflowBuild := Seq(
-  WorkflowStep.Run(List("sbt 'test; scripted'"), name = Some("scripted")),
+  WorkflowStep.Run(List("sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} 'test; scripted'"), name = Some("scripted")),
   WorkflowStep.Run(
     List("sbt cli3/assembly"),
     name = Some("Build CLI"),
@@ -176,7 +181,7 @@ lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3For
     publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(scalaVersion.value == scala3ForSbt),
     pluginCrossBuild / sbtVersion := pluginSbtVersion(scalaBinaryVersion.value, "1.9.0"),
     scriptedBufferLog := false,
-    scriptedLaunchOpts ++= Seq(s"-Dplugin.version=${version.value}", s"-Dscala.version=$scala3ForLib"),
+    scriptedLaunchOpts ++= Seq(s"-Dplugin.version=${version.value}", s"-Dscala.version=$scriptedScalaVersion"),
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
     libraryDependencies ++= Seq(
       ("io.get-coursier" %% "coursier" % "2.1.24").cross(CrossVersion.for3Use2_13)
