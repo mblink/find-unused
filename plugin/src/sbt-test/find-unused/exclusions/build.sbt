@@ -7,9 +7,10 @@ Global / findUnusedExclusions := Seq(
   FindUnusedExclusion(src = "^\\Qb/src/main/scala/bondlink/UsesShow.scala\\E$".r),
 )
 
+ThisBuild / scalaVersion := sys.props("scala.version")
+
 lazy val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := sys.props("scala.version"),
 )
 
 lazy val a = project.in(file("a")).settings(commonSettings)

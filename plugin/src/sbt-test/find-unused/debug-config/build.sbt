@@ -2,6 +2,8 @@ Global / findUnusedUseLocalClasspath := true
 Global / findUnusedUseRootDirectory := false
 Global / findUnusedPackages += "bl.unused"
 
+ThisBuild / scalaVersion := sys.props("scala.version")
+
 def quote(s: String): String = s""""$s""""
 def jsonObj(fields: (String, String)*): String = "{" ++ fields.map { case (k, v) => s"""${quote(k)}:$v""" }.mkString(",") ++ "}"
 def jsonArr(values: String*): String = "[" ++ values.mkString(",") ++ "]"
@@ -10,7 +12,6 @@ def jsonArr(values: String*): String = "[" ++ values.mkString(",") ++ "]"
 
 lazy val root = project.in(file(".")).settings(
   version := "0.1.0-SNAPSHOT",
-  scalaVersion := sys.props("scala.version"),
   check := {
     val classpath = findUnusedFullTestClasspath.value
     val expected = jsonObj(

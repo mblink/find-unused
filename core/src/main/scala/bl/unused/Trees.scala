@@ -100,6 +100,7 @@ object Trees {
         case Match(selector, cases) => references(selector) |+| referencesL(cases)
         case MatchTypeTree(bound, selector, cases) => references(bound) |+| references(selector) |+| referencesL(cases)
         case NamedArg(_, arg) => references(arg)
+        case NamedPattern(_, body) => references(body)
         case NamedTypeBoundsTree(_, _) => References.empty
         case New(tpt) => references(tpt)
         case OpaqueTypeAliasDefinitionTree(bounds, alias) => references(bounds) |+| references(alias)
