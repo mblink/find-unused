@@ -1,0 +1,5 @@
+> about
+$ copy-file loads.txt loads-before.txt
+> findUnusedAll
+$ must-mirror output/expected.txt output/actual.txt
+$ must-mirror loads-before.txt loads.txt

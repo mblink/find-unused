@@ -206,12 +206,17 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     }
   }
 
+  // all project refs that have a Scala version
+  private def scalaProjectRefs(state: State): Seq[ProjectRef] =
+    state.setting(Keys.loadedBuild).allProjectRefs.map(_._1).filter(p => state.getSetting(p / scalaVersion).isDefined)
+
+  // all cross scala versions of those projects
+  private def allCrossScalaVersions(state: State, projectRefs: Seq[ProjectRef]): Seq[String] =
+    projectRefs.flatMap(p => state.setting(p / crossScalaVersions)).distinct
+
   private def findUnusedStoreAllProjectClasspaths(state: State): State = {
-    val loadedBuild = state.setting(Keys.loadedBuild)
-    // all project refs that have a Scala version
-    val projectRefs = loadedBuild.allProjectRefs.map(_._1).filter(p => state.getSetting(p / scalaVersion).isDefined)
-    // all cross scala versions of those projects
-    val scalaVersions = projectRefs.flatMap(p => state.setting(p / crossScalaVersions)).distinct
+    val projectRefs = scalaProjectRefs(state)
+    val scalaVersions = allCrossScalaVersions(state, projectRefs)
 
     val initState = state
       .put(findUnusedClasspathKey, Seq.empty[String])
@@ -222,6 +227,39 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     )
 
     storeAllClasspaths.toList ::: initState
+  }
+
+  @annotation.tailrec
+  private def runCommand(command: String, state: State): State = {
+    val nextState = Parser.parse(command, state.combinedParser).fold(
+      msg => sys.error(s"Invalid command: $msg"),
+      cmd => cmd()
+    )
+    nextState.remainingCommands.toList match {
+      case Nil => nextState
+      case h :: t => runCommand(h.commandLine, nextState.copy(remainingCommands = t))
+    }
+  }
+
+  // `++` reapplies every project's settings, which races tasks running alongside, so it only runs when a project cross-builds
+  private lazy val findUnusedProjectClasspathTask = Def.taskDyn {
+    val state = Keys.state.value
+    val projectRefs = scalaProjectRefs(state)
+    val scalaVersions = allCrossScalaVersions(state, projectRefs)
+    val crossBuilds = projectRefs.exists(p => state.setting(p / crossScalaVersions).exists(_ != state.setting(p / scalaVersion)))
+
+    if (crossBuilds)
+      Def.task(runCommand(findUnusedStoreAllProjectClasspaths, state.copy(remainingCommands = Nil)).attributes(findUnusedClasspathKey))
+    else
+      Def.task {
+        scalaVersions
+          .flatMap(v => projectRefs.filter(p => state.setting(p / scalaVersion) == v))
+          .map(_ / findUnusedFullTestClasspath)
+          .join
+          .value
+          .flatten
+          .distinct
+      }
   }
 
   private lazy val mainClass = "bl.unused.FindUnusedCli"
@@ -239,25 +277,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val cliClasspath = findUnusedCliClasspath.value
     val classpathOpts = List("-cp", Path.makeString(cliClasspath))
 
-    @annotation.tailrec
-    def runCommand(command: String, state: State): State = {
-      val nextState = Parser.parse(command, state.combinedParser).fold(
-        msg => sys.error(s"Invalid command: $msg"),
-        cmd => cmd()
-      )
-      nextState.remainingCommands.toList match {
-        case Nil => nextState
-        case h :: t => runCommand(h.commandLine, nextState.copy(remainingCommands = t))
-      }
-    }
-
-    val state0 = Keys.state.value
-    val state = runCommand(
-      findUnusedStoreAllProjectClasspaths,
-      state0.copy(remainingCommands = Nil)
-    ).copy(remainingCommands = state0.remainingCommands)
-
-    val projClasspath = state.attributes(findUnusedClasspathKey)
+    val projClasspath = findUnusedProjectClasspathTask.value
     val projPackages = findUnusedPackages.value
 
     val useRootDir = findUnusedUseRootDirectory.value
