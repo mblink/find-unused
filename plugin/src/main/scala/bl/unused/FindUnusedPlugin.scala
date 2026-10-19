@@ -1,7 +1,7 @@
 package bl.unused
 
 import coursier.{Fetch, LocalRepositories, Repositories}
-import coursier.core.{Dependency, Module, ModuleName, Organization}
+import coursier.core.{Module, ModuleName, Organization}
 import coursier.maven.MavenRepository
 import java.io.{FileOutputStream, PrintWriter, StringWriter}
 import sbt.*
@@ -164,7 +164,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     log.info("Fetching find-unused CLI with coursier")
 
-    val dep = Dependency(Module(Organization("bondlink"), ModuleName("find-unused-cli_3"), Map.empty), BuildInfo.version)
+    val dep = coursierDependency(Module(Organization("bondlink"), ModuleName("find-unused-cli_3"), Map.empty), BuildInfo.version)
     val repos = Seq(
       Repositories.central,
       LocalRepositories.ivy2Local,
