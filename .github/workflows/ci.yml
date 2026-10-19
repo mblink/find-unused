@@ -30,8 +30,13 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         scala: [3.10.0]
-        java: [temurin@17, temurin@21, temurin@25]
+        java: [temurin@17, temurin@25]
         scriptedScala: [3.8.4, 3.9.0, 3.10.0]
+        exclude:
+          - java: temurin@17
+            scriptedScala: 3.8.4
+          - java: temurin@17
+            scriptedScala: 3.9.0
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout current branch (full)
@@ -45,14 +50,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: sbt
-
-      - name: Setup Java (temurin@21)
-        if: matrix.java == 'temurin@21'
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: 21
           cache: sbt
 
       - name: Setup Java (temurin@25)
