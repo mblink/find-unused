@@ -152,7 +152,7 @@ lazy val cli = baseProj("cli", "find-unused-cli")
   .settings(
     libraryDependencies ++= Seq(
       "com.lihaoyi" %% "mainargs" % "0.7.8",
-      "org.jline" % "jline" % "4.2.1",
+      "org.jline" % "jline" % "4.4.8",
     ),
     run / fork := true,
     assembly / aggregate := false,
