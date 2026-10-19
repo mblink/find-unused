@@ -15,7 +15,8 @@ lazy val scriptedScalaVersion = sys.props.getOrElse("scripted.scala.version", sc
 ThisBuild / scalaVersion := scala3ForLib
 
 val java25 = JavaSpec.temurin("25")
-val javaVersions = Seq(JavaSpec.temurin("17"), JavaSpec.temurin("21"), java25)
+val java17 = JavaSpec.temurin("17")
+val javaVersions = Seq(java17, java25)
 
 val isTag = "startsWith(github.ref, 'refs/tags/v')"
 
@@ -48,6 +49,10 @@ def isScriptedScala(v: String) = s"matrix.scriptedScala == '$v'"
 val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && " ++ isScriptedScala(scala3ForLib) ++ " && github.event_name == 'push'"
 
 ThisBuild / githubWorkflowBuildMatrixAdditions += "scriptedScala" -> scriptedScalaVersions
+// Only test every scripted Scala version on the newest JDK; the oldest JDK just checks the latest Scala version
+ThisBuild / githubWorkflowBuildMatrixExclusions ++= scriptedScalaVersions.filterNot(_ == scala3ForLib).map(v =>
+  MatrixExclude(Map("java" -> java17.render, "scriptedScala" -> v))
+)
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Run(List("sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} 'test; scripted'"), name = Some("scripted")),
@@ -152,7 +157,7 @@ lazy val cli = baseProj("cli", "find-unused-cli")
   .settings(
     libraryDependencies ++= Seq(
       "com.lihaoyi" %% "mainargs" % "0.7.8",
-      "org.jline" % "jline" % "4.2.1",
+      "org.jline" % "jline" % "4.4.8",
     ),
     run / fork := true,
     assembly / aggregate := false,
