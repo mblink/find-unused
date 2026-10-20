@@ -33,6 +33,13 @@ object Symbols {
 
   def isConstructor(sym: Symbol): Boolean = sym.name == nme.Constructor
 
+  /**
+   * Whether `sym` is a class's primary constructor, which is used whenever its class is. Auxiliary constructors
+   * (`def this(...)`) are reported like methods. Without a tree to tell them apart, every constructor counts as primary.
+   */
+  def isPrimaryConstructor(sym: Symbol): Boolean =
+    isConstructor(sym) && Option(sym.owner).collect { case c: ClassSymbol => c }.flatMap(_.tree).forall(_.rhs.constr.symbol == sym)
+
   def constructorParamToParamAccessors(ctorParam: Symbol)(using ctx: Context): Set[Symbol] =
     Option(ctorParam.owner)
       .collect { case t: TermSymbol if Symbols.isConstructor(t) => t } // t is the class constructor
@@ -45,7 +52,7 @@ object Symbols {
       .collect { case t: TermSymbol if t.isParamAccessor => t }
       .flatMap(t => Option(t.owner))
       .collect { case c: ClassSymbol => c } // c is the parent class
-      .flatMap(_.declarations.find(Symbols.isConstructor))
+      .flatMap(_.declarations.find(Symbols.isPrimaryConstructor))
       .collect { case t: TermSymbol => t.tree } // t is the class constructor
       .flatten
       .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
@@ -65,7 +72,7 @@ object Symbols {
     Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
 
   def isValidDefinition(sym: Symbol): Boolean =
-    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym)
+    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isPrimaryConstructor(sym)
 
   def isInPackage(pkgSyms: Set[PackageSymbol])(sym: Symbol): Boolean =
     sym match {
