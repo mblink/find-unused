@@ -10,6 +10,7 @@ case class Env(
   debug: Boolean,
   rootDirectory: Option[Path],
   packages: Seq[String],
+  isInPackages: Symbol => Boolean,
   symbolIsValid: Symbol => Boolean,
   // Whether a symbol is referenced in bytecode in a way that TASTy can't see, see `Bytecode`
   usedInBytecode: Symbol => Boolean,

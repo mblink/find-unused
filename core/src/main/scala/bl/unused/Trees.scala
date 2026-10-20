@@ -142,6 +142,43 @@ object Trees {
     ).foldMap(References.fromSymbol(_, References.used))
   }
 
+  private val transparentInlineDefsCache = mutable.Map.empty[ClassSymbol, List[TermSymbol]]
+
+  // The `transparent inline` methods declared in a class and in the classes and objects nested in it
+  private def transparentInlineDefs(cls: ClassSymbol)(using ctx: Context): List[TermSymbol] =
+    transparentInlineDefsCache.synchronized(transparentInlineDefsCache.getOrElseUpdate(cls,
+      cls.declarations.flatMap {
+        case t: TermSymbol if t.isTransparentInline => List(t)
+        case c: ClassSymbol => transparentInlineDefs(c)
+        case _ => Nil
+      }
+    ))
+
+  /**
+   * If this `Inlined` tree is the expansion of a `transparent inline` method, we consider the method used.
+   *
+   * `transparent inline` methods are expanded before TASTy is pickled, and the `Inlined` tree only records the
+   * top-level class the method is defined in as its `caller`. The root of the expansion is positioned inside the
+   * method's definition, though -- in its body for a regular method, or at the `${ ... }` splice for a macro -- so we
+   * look for the innermost `transparent inline` method in that class whose definition contains that position. Code
+   * from the call site, like inline arguments, is nested in `Inlined` trees with no `caller`, so it doesn't interfere.
+   *
+   * Only the position's offsets are used, since the source file recorded for a macro expansion is the call site's.
+   */
+  private def transparentInlineReferences(expr: TermTree, caller: TypeTree)(using ctx: Context): EnvR[References] =
+    EnvR.env.flatMap { env =>
+      val pos = expr.pos
+      Some(caller.toType)
+        .collect { case t: TypeRef => t.optSymbol }
+        .flatten
+        .collect { case c: ClassSymbol if !pos.isUnknown && env.isInPackages(c) => c }
+        .toList
+        .flatMap(transparentInlineDefs)
+        .flatMap(m => m.tree.map(_.pos).filter(p => !p.isUnknown && p.startOffset <= pos.startOffset && pos.endOffset <= p.endOffset).map((m, _)))
+        .minByOption((_, p) => p.endOffset - p.startOffset)
+        .fold(References.empty)((m, _) => References.fromSymbol(m, References.used))
+    }
+
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     EnvR.debug.flatMap { debug =>
       if (debug) println(s"************* tree: ${Debug.printer(tree)}")
@@ -175,7 +212,9 @@ object Trees {
         case ImportIdent(_) => References.empty
         case ImportSelector(imported, renamed, bound) => references(imported) |+| referencesO(renamed) |+| referencesO(bound)
         case InferredTypeBoundsTree(_) => References.empty
-        case Inlined(expr, caller, bindings) => references(expr) |+| referencesO(caller) |+| referencesL(bindings)
+        case Inlined(expr, caller, bindings) =>
+          references(expr) |+| referencesO(caller) |+| referencesL(bindings) |+|
+            caller.fold(References.empty)(transparentInlineReferences(expr, _))
         case i @ InlinedTypeTree(caller, expansion) => Types.prefixReferences(i.toPrefix) |+| referencesO(caller) |+| references(expansion)
         case InlineIf(cond, thenPart, elsePart) => references(cond) |+| references(thenPart) |+| references(elsePart)
         case InlineMatch(selector, cases) => referencesO(selector) |+| referencesL(cases)
