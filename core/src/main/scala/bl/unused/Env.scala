@@ -11,6 +11,8 @@ case class Env(
   rootDirectory: Option[Path],
   packages: Seq[String],
   symbolIsValid: Symbol => Boolean,
+  // Whether a symbol is referenced in bytecode in a way that TASTy can't see, see `Bytecode`
+  usedInBytecode: Symbol => Boolean,
 )
 
 // The symbols themselves rather than their hash codes, because `Symbol` doesn't override `hashCode`, so different

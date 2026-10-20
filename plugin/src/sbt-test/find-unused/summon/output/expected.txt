@@ -1,0 +1,13 @@
+Found 4 unused givens
+
+┌────────────────────────────────────────┬─────────────────────────────────────────────┐
+│ Instance                               │ Location                                    │
+├────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ bl.unused.ShowInstances.unusedViaTrait │ a/src/main/scala/bl/unused/Show.scala:9:9   │
+├────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ bl.unused.Show.unused                  │ a/src/main/scala/bl/unused/Show.scala:18:9  │
+├────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ bl.unused.Show$package.unusedTopLevel  │ a/src/main/scala/bl/unused/Show.scala:23:7  │
+├────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ bl.unused.PrivateShows.unusedPrivate   │ a/src/main/scala/bl/unused/Show.scala:27:17 │
+└────────────────────────────────────────┴─────────────────────────────────────────────┘

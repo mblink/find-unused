@@ -18,7 +18,7 @@ See below for more details on setup and use.
 - [Exclusions](#exclusions)
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
 - [Known issues](#known-issues)
-  - [`given`s/`implicit`s summoned with `inline`/macro methods](#givensimplicits-summoned-with-inlinemacro-methods)
+  - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
   - [`transparent inline` methods](#transparent-inline-methods)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
 - [Debugging](#debugging)
@@ -116,7 +116,7 @@ Global / findUnusedExclusions := Seq(
 
 ## Known issues
 
-### `given`s/`implicit`s summoned with `inline`/macro methods
+### `given`s summoned with `inline`/macro methods
 
 As of Scala 3.10.0, the TASTy representation of some `inline` and macro-related methods does not include references to
 the `given`/`implicit` instances that they summon -- https://github.com/scala/scala3/issues/22701
@@ -126,12 +126,11 @@ This includes:
 1. `scala.compiletime.summonAll`
 2. `scala.compiletime.summonFrom`
 3. `scala.quoted.Expr.summon`
-4. Uses of `scala.compiletime.summonInline` in macros
+4. Uses of `scala.compiletime.summonInline` in macros and other `inline` methods
 
-The end result is that any instances that are _only_ resolved by these methods will be reported as unused.
-
-This is especially problematic for derivation, which often uses `summonFrom`. For example, with this code using
-[circe](https://github.com/circe/circe) derivation:
+These methods are expanded after the TASTy is written, so to work around this, find-unused also reads the bytecode of
+the analyzed packages and considers a `given`/`implicit` used if the bytecode references it. This covers derivation,
+which often uses `summonFrom`. For example, with this code using [circe](https://github.com/circe/circe) derivation:
 
 ```scala
 import io.circe.Decoder
@@ -140,8 +139,7 @@ case class Foo(int: Int) derives Decoder
 case class Bar(foo: Foo) derives Decoder
 ```
 
-`Foo`'s derived `Decoder` will be reported as unused because circe derivation uses `summonFrom`. The `Decoder` is
-required and used by `Bar`'s derived `Decoder`.
+`Foo`'s derived `Decoder` is used by `Bar`'s derived `Decoder`, which is only visible in the bytecode.
 
 ### `transparent inline` methods
 
