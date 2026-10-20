@@ -17,6 +17,7 @@ See below for more details on setup and use.
     - [Example usage](#example-usage)
 - [Exclusions](#exclusions)
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
+- [Default values](#default-values)
 - [Transitive mode](#transitive-mode)
 - [Known issues](#known-issues)
   - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
@@ -115,6 +116,17 @@ Global / findUnusedExclusions := Seq(
   FindUnusedExclusion(src = "...".r, sym = "...".r),
 )
 ```
+
+## Default values
+
+A parameter's default value is reported when no call ever uses it, because every caller passes that argument. It's
+listed as the method followed by the parameter's name, e.g. `com.example.Foo.bar(baz = ...)` for `baz` in
+`def bar(baz: Int = 1)`, or `com.example.Foo(baz = ...)` for a constructor parameter. Removing the default is safe:
+a call that relied on it fails to compile.
+
+Macros that read default values, like JSON decoders filling in missing fields, are taken into account through the
+bytecode. A library that reads them by reflection at runtime isn't, so exclude the defaults of the classes it handles,
+e.g. with `--exclusion 'sym=^com\.example\.models\..*\(\w+ = \.\.\.\)$'`.
 
 ## Transitive mode
 

@@ -54,11 +54,18 @@ object Symbols {
   def isDefaultParam(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isParamWithDefault }.getOrElse(false)
 
+  /** A method that computes a parameter's default value, e.g. `foo$default$2` for the second parameter of `foo` */
+  def isDefaultGetter(sym: Symbol): Boolean =
+    sym.name match {
+      case _: DefaultGetterName => true
+      case _ => false
+    }
+
   def isGiven(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
 
   def isValidDefinition(sym: Symbol): Boolean =
-    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym) && !isDefaultParam(sym)
+    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym)
 
   def isInPackage(pkgSyms: Set[PackageSymbol])(sym: Symbol): Boolean =
     sym match {
@@ -72,6 +79,31 @@ object Symbols {
       case Some(owner: TermOrTypeSymbol) => s"${name(owner)}.${sym.name}"
       case None => sym.displayFullName
     }).replace("$.", ".").stripSuffix("$")
+
+  /**
+   * The parameter whose default value a default getter computes, with its method, or its class for a constructor
+   * parameter
+   */
+  def defaultGetterParam(sym: Symbol)(using ctx: Context): Option[(TermOrTypeSymbol, TermSymbol)] =
+    (sym.name, Option(sym.owner)) match {
+      case (DefaultGetterName(method, index), Some(owner: ClassSymbol)) =>
+        // A constructor's default getters are in its class's companion
+        val methods: List[(TermOrTypeSymbol, TermSymbol)] =
+          if (method == nme.Constructor) owner.companionClass.toList.flatMap(c => c.getAllOverloadedDecls(method).map(c -> _))
+          else owner.getAllOverloadedDecls(method).map(m => m -> m)
+        // Only one overload of a method can have default values
+        methods.iterator
+          .map((m, decl) => (m, decl.paramSymss.flatMap(_.left.toOption.toList.flatten).lift(index)))
+          .collectFirst { case (m, Some(p)) if p.isParamWithDefault => (m, p) }
+      case _ => None
+    }
+
+  /**
+   * The name a symbol is reported under. That's `name`, except for default getters: the default value of `bar` in
+   * `def foo(bar: Int = 1)` is `foo(bar = ...)`, and in `class Foo(bar: Int = 1)` it's `Foo(bar = ...)`.
+   */
+  def displayName(sym: Symbol)(using ctx: Context): String =
+    defaultGetterParam(sym).fold(name(sym))((method, param) => s"${name(method)}(${param.name} = ...)")
 
   def allMatchingSymbols(sym: Symbol)(using ctx: Context): List[Symbol] =
     Option(sym.owner).fold(Nil) {
@@ -376,17 +408,9 @@ object Symbols {
       )
     }
 
-  // Does the given Symbol or its owner have a DefaultGetterName as its name?
-  // It seems like `def`s with default params are duplicated as `DefDef`s with a `name` that's a `DefaultGetterParam`
-  private object DefaultParam {
-    private def isDefaultName(name: Name): Boolean =
-      name match {
-        case _: DefaultGetterName => true
-        case _ => false
-      }
-
-    def unapply(sym: Symbol): Boolean =
-      isDefaultName(sym.name) || Option(sym.owner).fold(false)(s => isDefaultName(s.name))
+  // A parameter of a default getter, which repeats the parameters of the method's earlier parameter lists
+  private object ParamOfDefaultGetter {
+    def unapply(sym: Symbol): Boolean = Option(sym.owner).exists(isDefaultGetter)
   }
 
   private object IgnoredParam {
@@ -450,7 +474,7 @@ object Symbols {
   /** Whether `sym` is one of the symbols the analysis reports on, mirroring the cases in `references` below */
   def isDefinition(env: Env, sym: Symbol)(using ctx: Context): Boolean =
     env.symbolIsValid(sym) && isValidDefinition(sym) && !isMainWrapper(sym) && syntheticMemberOfCaseClass(sym).isEmpty && (sym match {
-      case t: TermSymbol => !t.isModuleVal && !IgnoredParam.unapply(t) && !DefaultParam.unapply(t)
+      case t: TermSymbol => !t.isModuleVal && !IgnoredParam.unapply(t) && !ParamOfDefaultGetter.unapply(t)
       case c: ClassSymbol => !c.isRefinementClass
       case t: TypeMemberSymbol => !Option(t.owner).exists(RefinementClass.unapply)
       case _ => false
@@ -479,9 +503,9 @@ object Symbols {
 
             case t: TermSymbol =>
               if (debug) println(s"*********** TermSymbol: ${name(t)}")
-              // Don't count default params as definitions
+              // Don't count the parameters of default getters as definitions
               (t match {
-                case DefaultParam() => References.empty
+                case ParamOfDefaultGetter() => References.empty
                 case _ => References.fromSymbol(t, References.defined)
               }) |+|
                 References.usedProxy(getMethodAndOverridesFromParam(t).map((_, Set(t))).toMap) |+|

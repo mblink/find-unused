@@ -32,8 +32,9 @@ object FindUnused {
         packages,
         Symbols.isInPackage(pkgSyms),
         sym => symbolIsValid(sym) && Symbols.isInPackage(pkgSyms)(sym),
-        // Only `given`s are affected by implicit searches that happen after TASTy is pickled
-        sym => if (Symbols.isGiven(sym)) bytecodeRefs.callers(sym) else Set.empty,
+        // `given`s can be summoned by implicit searches that happen after TASTy is pickled, and macros can read
+        // default values, e.g. to decode a missing JSON field
+        sym => if (Symbols.isGiven(sym) || Symbols.isDefaultGetter(sym)) bytecodeRefs.callers(sym) else Set.empty,
       )
 
       val refs = packages.foldMap { p =>
