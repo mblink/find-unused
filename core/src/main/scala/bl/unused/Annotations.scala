@@ -76,9 +76,9 @@ object Annotations {
     val allSyms = (Set(sym) ++ paramAccessorSyms ++ ctorParamSym).toList
     val hasUnusedAnnotation = allSyms.exists(_.annotations.exists(isUnusedAnnotation))
 
-    allSyms.foldMap(_.annotations.foldMap(a => Trees.references(a.tree))) |+| (
+    allSyms.foldMap(s => Trees.within(s)(s.annotations.foldMap(a => Trees.references(a.tree)))) |+| (
       // If any relevant symbol has an unused annotation, consider them all used
-      if (hasUnusedAnnotation) allSyms.foldMap(References.fromSymbol(_, References.used))
+      if (hasUnusedAnnotation) allSyms.foldMap(References.fromSymbol(_, References.root))
       else References.empty
     )
   }

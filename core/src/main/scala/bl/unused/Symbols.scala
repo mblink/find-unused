@@ -397,6 +397,32 @@ object Symbols {
     def unapply(sym: Symbol): Boolean = Some(sym).collect { case c: ClassSymbol => c.isRefinementClass }.getOrElse(false)
   }
 
+  private val mainName = termName("main")
+  private val testSource = "(^|/)src/test/".r
+
+  /** Definitions that are used without being referenced: test classes, `main` methods, and objects that inherit one */
+  def isEntryPoint(sym: Symbol, pos: Option[String])(using ctx: Context): Boolean =
+    sym match {
+      case c: ClassSymbol =>
+        pos.exists(testSource.findFirstIn(_).nonEmpty) ||
+          Either.catchNonFatal(c.linearization.drop(1).exists(_.getAllOverloadedDecls(mainName).nonEmpty)).getOrElse(false)
+      case t: TermSymbol =>
+        t.isMethod && (
+          t.name == mainName ||
+            Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption.exists(t.hasAnnotation)
+        )
+      case _ => false
+    }
+
+  /** Whether `sym` is one of the symbols the analysis reports on, mirroring the cases in `references` below */
+  def isDefinition(env: Env, sym: Symbol)(using ctx: Context): Boolean =
+    env.symbolIsValid(sym) && isValidDefinition(sym) && syntheticMemberOfCaseClass(sym).isEmpty && (sym match {
+      case t: TermSymbol => !t.isModuleVal && !IgnoredParam.unapply(t) && !DefaultParam.unapply(t)
+      case c: ClassSymbol => !c.isRefinementClass
+      case t: TypeMemberSymbol => !Option(t.owner).exists(RefinementClass.unapply)
+      case _ => false
+    })
+
   def references(sym: Symbol)(using ctx: Context): EnvR[References] =
     EnvR.hasSeenSymbol(sym).flatMap(seen =>
       if (seen) References.empty
@@ -446,7 +472,7 @@ object Symbols {
                 case Some(RefinementClass()) => References.empty
                 case _ => References.fromSymbol(t, References.defined)
               }) |+|
-                (t.typeDef match {
+                Trees.within(t)(t.typeDef match {
                   case TypeMemberDefinition.TypeAlias(tpe) =>
                     Types.symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
                   case TypeMemberDefinition.AbstractType(bounds) =>

@@ -17,6 +17,12 @@ object Trees {
 
   def referencesL(trees: List[Tree])(using ctx: Context): EnvR[References] = trees.foldMap(references)
 
+  /** Attributes the references found by `refs` to `sym`, if it's one of the definitions the analysis reports on */
+  def within(sym: Symbol)(refs: EnvR[References])(using ctx: Context): EnvR[References] =
+    EnvR((env, syms) =>
+      refs.run(if (Symbols.isDefinition(env, sym)) env.copy(enclosing = sym :: env.enclosing) else env, syms)
+    )
+
   // We have to handle `Template`s specially when the owner is a `ClassDef`
   // Objects (which are `ClassDef`s) contain a reference to themselves in their `Template`s,
   // causing them to always appear used
@@ -222,13 +228,11 @@ object Trees {
         case Block(stats, expr) => referencesL(stats) |+| references(expr)
         case ByNameTypeTree(result) => references(result)
         case CaseDef(pattern, guard, body) => references(pattern) |+| referencesO(guard) |+| references(body)
-        case c @ ClassDef(_, rhs, symbol) => Symbols.references(symbol) |+| templateReferences(rhs, Some(c))
+        case c @ ClassDef(_, rhs, symbol) => Symbols.references(symbol) |+| within(symbol)(templateReferences(rhs, Some(c)))
         case DefDef(name, paramLists, resultTpt, rhs, symbol) =>
           removeCaseClassIfSynthetic(symbol)(
             Symbols.references(symbol) |+|
-              paramLists.foldMap(e => referencesL(e.merge)) |+|
-              references(resultTpt) |+|
-              referencesO(rhs)
+              within(symbol)(paramLists.foldMap(e => referencesL(e.merge)) |+| references(resultTpt) |+| referencesO(rhs))
           )
         case ExplicitTypeBoundsTree(low, high) => references(low) |+| references(high)
         case Export(expr, selectors) => references(expr) |+| referencesL(selectors)
@@ -238,7 +242,13 @@ object Trees {
           syms.toList.foldMap(Symbols.withStaticOwners(_).toList.foldMap(References.fromSymbol(_, References.used))) |+|
             References.inlineCalls(syms)
         case If(cond, thenPart, elsePart) => references(cond) |+| references(thenPart) |+| references(elsePart)
-        case Import(expr, selectors) => references(expr) |+| referencesL(selectors)
+        // An import at the top of a file isn't a use of anything, since what it imports is referenced where it's used,
+        // but one in a definition is, e.g. an `inline` method can import `given`s for the code it expands to
+        case Import(expr, selectors) =>
+          EnvR.env.flatMap(env =>
+            if (env.enclosing.nonEmpty) references(expr) |+| referencesL(selectors)
+            else (references(expr) |+| referencesL(selectors)).map(r => References.monoid.empty.copy(importRefs = r.used))
+          )
         case ImportIdent(_) => References.empty
         case ImportSelector(imported, renamed, bound) => references(imported) |+| referencesO(renamed) |+| referencesO(bound)
         case InferredTypeBoundsTree(_) => References.empty
@@ -292,7 +302,7 @@ object Trees {
         case Typed(expr, tpt) => references(expr) |+| references(tpt)
         case t @ TypeIdent(_) => Types.references(t.toType)
         case TypeLambdaTree(tparams, body) => referencesL(tparams) |+| references(body)
-        case TypeMember(_, rhs, _) => references(rhs)
+        case TypeMember(_, rhs, symbol) => within(symbol)(references(rhs))
         case TypeParam(_, bounds, _) => references(bounds)
         case TypeTest(body, tpt) => references(body) |+| references(tpt)
         case TypeTreeBind(_, body, _) => references(body)
@@ -300,7 +310,7 @@ object Trees {
         // TODO - should implicits be added to References#used?
         case Unapply(fun, implicits, patterns) => references(fun) |+| referencesL(implicits) |+| referencesL(patterns)
         case ValDef(_, tpt, rhs, symbol) =>
-          removeCaseClassIfSynthetic(symbol)(Symbols.references(symbol) |+| references(tpt) |+| referencesO(rhs))
+          removeCaseClassIfSynthetic(symbol)(Symbols.references(symbol) |+| within(symbol)(references(tpt) |+| referencesO(rhs)))
         case While(cond, body) => references(cond) |+| references(body)
         case WildcardPattern(_) => References.empty
         case WildcardTypeArgTree(bounds) => references(bounds)

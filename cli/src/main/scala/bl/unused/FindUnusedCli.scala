@@ -9,7 +9,6 @@ import mainargs.{arg, main, Flag, ParserForClass, ParserForMethods, TokensReader
 import org.jline.terminal.TerminalBuilder
 import scala.io.AnsiColor
 import scala.util.Using
-import scala.util.chaining.*
 import scala.util.matching.Regex
 
 object FindUnusedCli {
@@ -70,6 +69,7 @@ object FindUnusedCli {
   @main
   case class Args(
     @arg(doc = "Enable debug logging") debug: Flag,
+    @arg(doc = "Also report code that's only used by unused code") transitive: Flag,
     @arg(short = 'd', doc = "Root directory of project") rootDirectory: Option[String],
     @arg(short = 'p', doc = "Packages to analyze") `package`: Seq[String],
     @arg(short = 'c', doc = "Classpath") classpath: Seq[String],
@@ -105,14 +105,10 @@ object FindUnusedCli {
       if (args.debug.value)
         println(s"*********** Result: ${Debug.printer(refs)}")
 
-      val unused = refs.computeUnused
-        .pipe(l =>
-          if (args.exclusion.nonEmpty)
-            l.filterNot(sym => args.exclusion.exists(_.matches(sym)))
-          else
-            l
-        )
-        .toList
+      val isExcluded = (sym: Sym) => args.exclusion.exists(_.matches(sym))
+      val unused =
+        (if (args.transitive.value) refs.computeTransitivelyUnused(isExcluded) else refs.computeUnused.filterNot(isExcluded))
+          .toList
         .sortBy {
           case Sym(_, name, Some(SourcePos(file, line, col))) => (file, line, col, name)
           case Sym(_, name, Some(pos)) => (pos, 0, 0, name)

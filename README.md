@@ -17,6 +17,7 @@ See below for more details on setup and use.
     - [Example usage](#example-usage)
 - [Exclusions](#exclusions)
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
+- [Transitive mode](#transitive-mode)
 - [Known issues](#known-issues)
   - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
   - [Nested `transparent inline` calls that reduce to a constant](#nested-transparent-inline-calls-that-reduce-to-a-constant)
@@ -79,6 +80,7 @@ There are a couple options you must pass, as well as some optional ones:
 |`--classpath`|Required, repeated|The full classpath of your code and all dependencies|
 |`--exclusion`|Optional, repeated|Code to exclude from unused warnings, see [Exclusions](#exclusions)|
 |`--root-directory`|Optional|The path to the root of your codebase; used when reporting code positions|
+|`--transitive`|Optional|Also report code that's only used by unused code, see [Transitive mode](#transitive-mode)|
 
 #### Example usage
 
@@ -113,6 +115,27 @@ Global / findUnusedExclusions := Seq(
   FindUnusedExclusion(src = "...".r, sym = "...".r),
 )
 ```
+
+## Transitive mode
+
+By default, find-unused considers code used if anything references it, even code that's unused itself. So an unused
+object whose methods call each other, a recursive method that nothing else calls, or code that only unused code calls
+isn't reported. In transitive mode, a reference only counts if it comes from code that's used itself, starting from:
+
+- `main` methods, `@main` methods, and objects that inherit a `main` method, like `App` or cats-effect's `IOApp`
+- classes in test sources (`src/test/`)
+- excluded code (see [Exclusions](#exclusions)), and code annotated with `@unused` or `@nowarn("msg=unused")`
+
+A member that overrides something outside the analyzed code, like `toString`, is used when its class is. A member that
+implements or overrides analyzed code is used when its class is and the member it overrides is, so a class that
+implements a used trait but is never created is reported. References
+that are only in the bytecode, like derived instances using each other through `summonFrom`, are attributed to the
+code they come from too, so a chain of derived instances that's only used by unused code is reported in one run. Only
+the outermost unused definition is reported: if an object is unused, its members aren't listed separately.
+
+Enable it in the sbt plugin with `Global / findUnusedTransitive := true`, or pass `--transitive` to the CLI. Code that's
+only reached in other ways, like reflection or a framework that instantiates classes from configuration, needs an
+exclusion.
 
 ## Known issues
 

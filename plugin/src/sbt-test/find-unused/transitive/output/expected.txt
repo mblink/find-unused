@@ -1,0 +1,29 @@
+Found 12 unused terms
+
+┌──────────────────────────────┬───────────────────────────────────────────┐
+│ Instance                     │ Location                                  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.ChainBase          │ src/main/scala/bl/unused/Main.scala:48:8  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.ChainTop           │ src/main/scala/bl/unused/Main.scala:52:8  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.DeadCluster        │ src/main/scala/bl/unused/Main.scala:78:8  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.Recursive          │ src/main/scala/bl/unused/Main.scala:84:8  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.OnlyUsedByDeadCode │ src/main/scala/bl/unused/Main.scala:89:8  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.DeadCode           │ src/main/scala/bl/unused/Main.scala:93:8  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.NeverInstantiated  │ src/main/scala/bl/unused/Main.scala:98:7  │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.Format             │ src/main/scala/bl/unused/Main.scala:102:8 │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.Runner             │ src/main/scala/bl/unused/Main.scala:107:7 │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.UnusedRunner       │ src/main/scala/bl/unused/Main.scala:111:8 │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.DeadGreeter        │ src/main/scala/bl/unused/Main.scala:125:7 │
+├──────────────────────────────┼───────────────────────────────────────────┤
+│ bl.unused.Greeting           │ src/main/scala/bl/unused/Main.scala:129:8 │
+└──────────────────────────────┴───────────────────────────────────────────┘
