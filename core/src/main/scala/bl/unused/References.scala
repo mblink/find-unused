@@ -127,8 +127,8 @@ object References {
     skipExportCheck: Boolean = false,
   )(using ctx: Context): EnvR[References] =
     EnvR.env.flatMap { env =>
-      if (env.symbolIsValid(sym))
-        (sym match {
+      (if (env.symbolIsValid(sym))
+        sym match {
           case _: PackageSymbol => empty
 
           case t: TermSymbol =>
@@ -137,7 +137,13 @@ object References {
               t.moduleClass.fold(empty)(mk(_))
 
           case _ => mk(sym)
-        }) |+| (if (skipExportCheck) References.empty else sym match {
+        }
+      else
+        empty) |+|
+        // This doesn't depend on whether `sym` itself is valid, because the symbols an export generates can be split
+        // between the explicits and givens analyses. For example, exporting an implicit class generates an implicit
+        // conversion, which is a given, along with a companion and a type, which aren't.
+        (if (skipExportCheck || !env.isInPackages(sym)) References.empty else sym match {
         /*
         If sym is an exported term:
 
@@ -160,7 +166,5 @@ object References {
 
         case _ => empty
       })
-      else
-        empty
     }
 }
