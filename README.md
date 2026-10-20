@@ -19,7 +19,7 @@ See below for more details on setup and use.
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
 - [Known issues](#known-issues)
   - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
-  - [`transparent inline` methods](#transparent-inline-methods)
+  - [`transparent inline` methods that only call other `transparent inline` methods](#transparent-inline-methods-that-only-call-other-transparent-inline-methods)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
 - [Debugging](#debugging)
 
@@ -144,27 +144,27 @@ case class Bar(foo: Foo) derives Decoder
 A `given` declared inside a method body compiles to a local variable, which the bytecode can't tell apart from any
 other, so one that's only summoned by an `inline` method or macro is still reported as unused.
 
-### `transparent inline` methods
+### `transparent inline` methods that only call other `transparent inline` methods
 
-As of Scala 3.10.0, the TASTy representation of calls to `transparent inline` methods is equivalent to the TASTy
-representation of the body of the `transparent inline` method -- there is no indication that the `transparent inline`
-method was called.
-
-For example:
+As of Scala 3.10.0, the TASTy representation of a call to a `transparent inline` method is the method's expanded body --
+there is no reference to the method itself. For example, the TASTy for `val bar` here is simply `val bar = 1`:
 
 ```scala
 transparent inline def foo(): Int = 1
 val bar = foo()
 ```
 
-The TASTy representation for `val bar` does not include a reference to `transparent inline def foo`, it appears as if
-`val bar` is simply defined as
+To work around this, find-unused uses the source positions recorded in the expansion, which point into the body of the
+`transparent inline` method it came from (or, for a macro, to its `${ ... }` splice). This doesn't work when a
+`transparent inline` method's body is itself a call to another `transparent inline` method, because the expansion only
+records the position of the innermost method's body. With Scala 3.10.0, in this example, `foo` is considered used, but
+`bar` is reported as unused (earlier Scala versions keep a separate expansion for `bar`, so it's considered used too):
 
 ```scala
-val bar = 1
+transparent inline def foo(x: Int): Int = x + 1
+transparent inline def bar(): Int = foo(41)
+val baz = bar()
 ```
-
-The end result is that `transparent inline def`s are reported as unused even when they are in fact used.
 
 ### Lack of support for multiple Scala versions
 
