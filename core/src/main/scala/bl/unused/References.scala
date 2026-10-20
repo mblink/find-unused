@@ -41,6 +41,9 @@ case class References(
   used: Set[Sym],
   // If the symbol represented by the map key is used, also mark the symbol represented by the map value as used
   usedProxy: Map[Sym, NonEmptySet[Sym]],
+  // The non-`transparent` inline methods the analyzed code calls, and the `inline given`s it defines -- see `InlineSummons`
+  inlineCalls: Set[TermSymbol] = Set.empty,
+  inlineGivens: Map[Sym, TermSymbol] = Map.empty,
 ) {
   final def removeUsed(sym: Symbol): References = {
     val c = Sym.id(sym)
@@ -86,7 +89,13 @@ object References {
   given monoid: Monoid[References] =
     Monoid.instance(
       References(Set.empty, Set.empty, Map.empty),
-      (x, y) => References(x.defined ++ y.defined, x.used ++ y.used, x.usedProxy |+| y.usedProxy),
+      (x, y) => References(
+        x.defined ++ y.defined,
+        x.used ++ y.used,
+        x.usedProxy |+| y.usedProxy,
+        x.inlineCalls ++ y.inlineCalls,
+        x.inlineGivens ++ y.inlineGivens,
+      ),
     )
 
   lazy val empty: EnvR[References] = monoid.empty.pure[EnvR]
@@ -110,13 +119,20 @@ object References {
             if (env.debug) println(s"*********** used in bytecode: ${Symbols.name(sym)}")
             Set(defSym)
           } else Set.empty[Sym]
-        refs = References(defined = Set(defSym), used = usedSyms ++ usedInBytecode, usedProxy = Map.empty)
+        inlineGivens = sym match {
+          case t: TermSymbol if t.isInline && Symbols.isGiven(t) => Map(defSym -> t)
+          case _ => Map.empty
+        }
+        refs = References(defined = Set(defSym), used = usedSyms ++ usedInBytecode, usedProxy = Map.empty, inlineGivens = inlineGivens)
       } yield refs) |+| Annotations.checkForUnused(sym)
     else
       empty
 
   val used = (sym: Symbol) => (ctx: Context) ?=>
     Sym.fromSymbol(sym).map(s => References(Set.empty, Set(s), Map.empty))
+
+  def inlineCalls(syms: Set[Symbol]): EnvR[References] =
+    monoid.empty.copy(inlineCalls = syms.collect { case t: TermSymbol if t.isInline && !t.isTransparentInline => t }).pure[EnvR]
 
   def usedProxy(m: Map[Symbol, Set[Symbol]]): EnvR[References] = empty.flatMap(_.addUsedProxy(m))
   def usedProxy(ifUsed: Symbol, thenUsed: Set[Symbol]): EnvR[References] = empty.flatMap(_.addUsedProxy(ifUsed, thenUsed))

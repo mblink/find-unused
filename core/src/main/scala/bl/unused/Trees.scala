@@ -220,9 +220,9 @@ object Trees {
         case Export(expr, selectors) => references(expr) |+| referencesL(selectors)
         case ExprPattern(expr) => references(expr)
         case i @ Ident(_) =>
-          Symbols.getFromIdent(i).toList.foldMap(
-            Symbols.withStaticOwners(_).toList.foldMap(References.fromSymbol(_, References.used))
-          )
+          val syms = Symbols.getFromIdent(i)
+          syms.toList.foldMap(Symbols.withStaticOwners(_).toList.foldMap(References.fromSymbol(_, References.used))) |+|
+            References.inlineCalls(syms)
         case If(cond, thenPart, elsePart) => references(cond) |+| references(thenPart) |+| references(elsePart)
         case Import(expr, selectors) => references(expr) |+| referencesL(selectors)
         case ImportIdent(_) => References.empty
@@ -253,7 +253,9 @@ object Trees {
           references(underlying) |+| referencesL(refinements) |+| Symbols.references(refinedCls)
         case Return(expr, from) => referencesO(expr) |+| Symbols.references(from)
         case s @ Select(qualifier, _) =>
-          Symbols.getFromSelect(s).toList.foldMap(References.fromSymbol(_, References.used)) |+| references(qualifier)
+          val syms = Symbols.getFromSelect(s)
+          syms.toList.foldMap(References.fromSymbol(_, References.used)) |+| References.inlineCalls(syms) |+|
+            references(qualifier)
         case SelectOuter(qualifier, _) => references(qualifier) // TODO - will this ever be a given?
         case s @ SelectTypeTree(qualifier, _) => Types.references(s.toType) |+| references(qualifier)
         case SelfDef(_, tpt) => references(tpt)
