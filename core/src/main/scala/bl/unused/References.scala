@@ -14,10 +14,14 @@ import scala.util.chaining.*
 import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
 
-sealed case class Sym private (underlyingHashCode: Int, name: String, pos: Option[String])
+sealed case class Sym private (id: Int, name: String, pos: Option[String])
 object Sym {
-  given order: Order[Sym] = Order.by(_.underlyingHashCode)
+  given order: Order[Sym] = Order.by(_.id)
   given ordering: Ordering[Sym] = order.toOrdering
+
+  // A unique id per symbol. `Symbol` doesn't override `hashCode`, so different symbols can share an identity hash code
+  private val ids = mutable.Map.empty[Symbol, Int]
+  def id(sym: Symbol): Int = ids.synchronized(ids.getOrElseUpdate(sym, ids.size))
 
   private val cache = mutable.Map.empty[Symbol, Sym]
 
@@ -26,7 +30,7 @@ object Sym {
 
   def fromSymbol(sym: Symbol): EnvR[Sym] =
     cached(sym)(EnvR.noSeenSymbols(env => new Sym(
-      underlyingHashCode = sym.hashCode,
+      id = id(sym),
       name = Symbols.name(sym),
       pos = sym.tree.map(t => Positions.format(env.rootDirectory, t.pos)),
     )))
@@ -39,8 +43,8 @@ case class References(
   usedProxy: Map[Sym, NonEmptySet[Sym]],
 ) {
   final def removeUsed(sym: Symbol): References = {
-    val c = sym.hashCode
-    copy(used = used.filterNot(_.underlyingHashCode === c))
+    val c = Sym.id(sym)
+    copy(used = used.filterNot(_.id === c))
   }
 
   final def addUsedProxy(m: Map[Symbol, Set[Symbol]]): EnvR[References] =

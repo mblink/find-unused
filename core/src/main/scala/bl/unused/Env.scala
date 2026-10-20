@@ -13,7 +13,9 @@ case class Env(
   symbolIsValid: Symbol => Boolean,
 )
 
-case class SeenSymbols(symbols: Set[Int])
+// The symbols themselves rather than their hash codes, because `Symbol` doesn't override `hashCode`, so different
+// symbols can share an identity hash code
+case class SeenSymbols(symbols: Set[Symbol])
 
 object SeenSymbols {
   given monoid: Monoid[SeenSymbols] =
@@ -35,14 +37,14 @@ object EnvR {
 
   def apply[A](f: (Env, SeenSymbols) => (SeenSymbols, A)): EnvR[A] = ReaderT(env => StateT(syms => f(env, syms)))
 
-  lazy val getSeenSymbols: EnvR[Set[Int]] = ReaderT(_ => StateT(syms => (syms, syms.symbols)))
+  lazy val getSeenSymbols: EnvR[Set[Symbol]] = ReaderT(_ => StateT(syms => (syms, syms.symbols)))
 
   def noSeenSymbols[A](f: Env => A): EnvR[A] = ReaderT(env => StateT(syms => (syms, f(env))))
 
   def addSeenSymbol(sym: Symbol): EnvR[Unit] =
-    ReaderT(_ => StateT(syms => (syms |+| SeenSymbols(Set(sym.hashCode)), ())))
+    ReaderT(_ => StateT(syms => (syms |+| SeenSymbols(Set(sym)), ())))
 
-  def hasSeenSymbol(sym: Symbol): EnvR[Boolean] = getSeenSymbols.map(_.contains(sym.hashCode))
+  def hasSeenSymbol(sym: Symbol): EnvR[Boolean] = getSeenSymbols.map(_.contains(sym))
 
   lazy val env: EnvR[Env] = noSeenSymbols(identity)
 

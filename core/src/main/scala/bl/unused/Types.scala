@@ -10,21 +10,22 @@ object Types {
 
   def symbols(tpe: Type)(using ctx: Context): Set[Symbol] = {
     @annotation.tailrec
-    def go(acc: Set[Symbol], seen: Set[Int], types: List[Type]): Set[Symbol] =
-      types.filterNot(t => seen.contains(t.hashCode)) match {
+    // `seen` holds the types themselves rather than their hash codes, since types don't override `hashCode`
+    def go(acc: Set[Symbol], seen: Set[Type], types: List[Type]): Set[Symbol] =
+      types.filterNot(seen.contains) match {
         case Nil => acc
 
-        case (t: TypeRef) :: rest => go(acc ++ t.optSymbol, seen + t.hashCode, rest)
+        case (t: TypeRef) :: rest => go(acc ++ t.optSymbol, seen + t, rest)
 
-        case (t: TermRef) :: rest => go(acc + t.symbol, seen + t.hashCode, rest)
+        case (t: TermRef) :: rest => go(acc + t.symbol, seen + t, rest)
 
         // TODO - change to this? go(acc, t.underlying :: rest)
-        case (t: ThisType) :: rest => go(acc ++ t.tref.optSymbol, seen + t.hashCode, rest)
+        case (t: ThisType) :: rest => go(acc ++ t.tref.optSymbol, seen + t, rest)
 
         case (t: AppliedType) :: rest =>
           go(
             acc,
-            seen + t.hashCode,
+            seen + t,
             t.tycon ::
               t.args.flatMap {
                 case t: Type => List(t)
@@ -33,14 +34,14 @@ object Types {
               rest,
           )
 
-        case (t: TypeParamRef) :: rest => go(acc, seen + t.hashCode, typeBoundsTypes(t.bounds) ::: rest)
+        case (t: TypeParamRef) :: rest => go(acc, seen + t, typeBoundsTypes(t.bounds) ::: rest)
 
-        case (t: TypeRefinement) :: rest => go(acc, seen + t.hashCode, t.parent :: typeBoundsTypes(t.refinedBounds) ::: rest)
+        case (t: TypeRefinement) :: rest => go(acc, seen + t, t.parent :: typeBoundsTypes(t.refinedBounds) ::: rest)
 
         case (t: TermRefinement) :: rest =>
           go(
             acc,
-            seen + t.hashCode,
+            seen + t,
             t.parent ::
               (t.refinedType match {
                 case t: Type => List(t)
@@ -52,7 +53,7 @@ object Types {
         case (t: MatchType) :: rest =>
           go(
             acc,
-            seen + t.hashCode,
+            seen + t,
             t.bound ::
               t.scrutinee ::
               t.cases.flatMap(c => c.pattern :: c.result :: c.paramTypeBounds.flatMap(typeBoundsTypes)) :::
@@ -62,15 +63,15 @@ object Types {
         case (t: TypeLambda) :: rest =>
           go(
             acc,
-            seen + t.hashCode,
+            seen + t,
             t.paramTypeBounds.flatMap(typeBoundsTypes) :::
               t.resultType ::
               rest
           )
 
-        case (t: AndType) :: rest => go(acc, seen + t.hashCode, t.first :: t.second :: rest)
+        case (t: AndType) :: rest => go(acc, seen + t, t.first :: t.second :: rest)
 
-        case (t: OrType) :: rest => go(acc, seen + t.hashCode, t.first :: t.second :: rest)
+        case (t: OrType) :: rest => go(acc, seen + t, t.first :: t.second :: rest)
 
         case (t: (
           AnnotatedType
@@ -84,9 +85,9 @@ object Types {
           | SuperType
           | TermParamRef
         )) :: rest =>
-          go(acc, seen + t.hashCode, t.underlying :: rest)
+          go(acc, seen + t, t.underlying :: rest)
 
-        case (t: (AnyKindType | CustomTransientGroundType | NothingType)) :: rest => go(acc, seen + t.hashCode, rest)
+        case (t: (AnyKindType | CustomTransientGroundType | NothingType)) :: rest => go(acc, seen + t, rest)
       }
 
     go(Set.empty, Set.empty, List(tpe))
