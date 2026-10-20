@@ -43,6 +43,11 @@ object Quoted {
   }
 }
 
+// A class's `Type` evidence is a field, and only the bytecode shows the healed quote reading it
+class QuotedClass[A: Type](using Quotes) {
+  def empty: Expr[List[A]] = '{ List.empty[A] }
+}
+
 object QuotedTypes {
   def typeOf[T: Type](using Quotes): Boolean = Type.of[T] match {
     case '[Int] => true
