@@ -16,6 +16,16 @@ object Show extends ShowInstances {
   given viaExprSummon: Show[Int] = _.toString
   given viaQuotedSummonInline: Show[Byte] = _.toString
   given unused: Show[Double] = _.toString
+
+  // `inline given`s leave no trace in bytecode, but `Show` is summoned by an inline method that's called, so this might
+  // have been found and is considered used
+  inline given inlineViaSummonInline: Show[Long] = new Show[Long] { def show(a: Long): String = a.toString }
+}
+
+trait NeverSummoned[A]
+
+object NeverSummoned {
+  inline given unusedInline: NeverSummoned[Int] = new NeverSummoned[Int] {}
 }
 
 given viaTopLevel: Show[Unit] = _ => "()"

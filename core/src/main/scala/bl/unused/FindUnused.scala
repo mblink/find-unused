@@ -36,12 +36,24 @@ object FindUnused {
         sym => Symbols.isGiven(sym) && bytecodeRefs.isReferenced(sym),
       )
 
-      packages.foldMap { p =>
+      val refs = packages.foldMap { p =>
         println(s"[find-unused] Analyzing package $p")
         Symbols.references(ctx.findPackage(p)).run(env, SeenSymbols.empty)._2
       }
+      markPossiblySummonedInlineGivens(refs, debug)
     }
   }
+
+  /** Consider `inline given`s used if an implicit search after TASTy is pickled might find them, see `InlineSummons` */
+  def markPossiblySummonedInlineGivens(refs: References, debug: Boolean)(using ctx: Context): References =
+    if (refs.inlineGivens.isEmpty) refs
+    else {
+      println("[find-unused] Checking inline givens")
+      val summoned = InlineSummons.summonedClasses(refs.inlineCalls)
+      val possiblyUsed = refs.inlineGivens.collect { case (s, g) if InlineSummons.mightFind(summoned, g) => s }
+      if (debug) possiblyUsed.foreach(s => println(s"*********** possibly summoned after pickling: ${s.name}"))
+      refs.copy(used = refs.used ++ possiblyUsed)
+    }
 
   object explicits extends Runner(s => !Symbols.isGiven(s))
   object givens extends Runner(Symbols.isGiven)

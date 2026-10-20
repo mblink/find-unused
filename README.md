@@ -144,6 +144,23 @@ case class Bar(foo: Foo) derives Decoder
 A `given` declared inside a method body compiles to a local variable, which the bytecode can't tell apart from any
 other, so one that's only summoned by an `inline` method or macro is still reported as unused.
 
+The bytecode doesn't help with `inline given`s, because they're expanded where they're summoned and leave no reference
+in the bytecode either, and find-unused can't tell which `inline given` a search found without reimplementing inlining.
+Instead, it considers an `inline given` used if its type class (or a subclass of it) is summoned by an `inline` method or
+macro that the analyzed code calls. So an `inline given` that's never summoned can still be reported, but an unused
+`inline given` of a type class that's summoned this way won't be:
+
+```scala
+import scala.compiletime.summonInline
+
+inline given Ordering[Foo] = Ordering.by(_.int)
+
+inline def sorted[A](as: List[A]): List[A] = as.sorted(using summonInline[Ordering[A]])
+
+// `sorted` summons an `Ordering`, so the `inline given` is considered used, whether or not it's what was summoned
+val foos = sorted(List(Foo(2), Foo(1)))
+```
+
 ### Nested `transparent inline` calls that reduce to a constant
 
 As of Scala 3.10.0, the TASTy representation of a call to a `transparent inline` method is the method's expanded body --
