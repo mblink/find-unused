@@ -139,11 +139,12 @@ object InlineSummons {
     roots.toList.sortBy(Symbols.name).foreach(enqueue(_, false))
     while (queue.nonEmpty) {
       val (sym, inMacro) = queue.dequeue()
+      // A body tasty-query can't read is skipped, which can make an `inline given` it summons look unused, so say so
       Either.catchNonFatal(sym.tree.foreach {
         case d: DefDef => d.rhs.foreach(walk(_, inMacro))
         case v: ValDef => v.rhs.foreach(walk(_, inMacro))
         case _ => ()
-      }): Unit
+      }).leftMap(e => println(s"[find-unused] Failed to read the body of ${Symbols.name(sym)}: ${e.getMessage}")): Unit
     }
 
     Option.unless(truncated)(found.toSet)
@@ -157,13 +158,16 @@ object InlineSummons {
     }
 
   // Every class extends these, so finding one of them, e.g. in `TypeRepr.of[Any]`, says nothing about a search
-  private def universalClasses(using ctx: Context): Set[ClassSymbol] =
+  def universalClasses(using ctx: Context): Set[ClassSymbol] =
     Set(ctx.defn.AnyClass, ctx.defn.MatchableClass, ctx.defn.ObjectClass, ctx.defn.ProductClass) ++
       List("java.io.Serializable", "scala.Equals").flatMap(n => Either.catchNonFatal(ctx.findTopLevelClass(n)).toOption)
 
-  /** Whether an implicit search for one of `summoned` might find the given `inline given` */
-  def mightFind(summoned: Set[ClassSymbol], inlineGiven: TermSymbol)(using ctx: Context): Boolean = {
-    val universal = universalClasses
+  /**
+   * Whether an implicit search for one of `summoned` might find the given `inline given`
+   *
+   * @param universal `universalClasses`, which don't count
+   */
+  def mightFind(summoned: Set[ClassSymbol], universal: Set[ClassSymbol], inlineGiven: TermSymbol)(using ctx: Context): Boolean = {
     // A search for `Decoder[A]` can find a given of a subclass, like `ConfiguredDecoder[A]`
     Either.catchNonFatal(resultType(inlineGiven.declaredType) match {
       case t: Type => t.dealias.instanceClass.toList.flatMap(c => Either.catchNonFatal(c.linearization).getOrElse(List(c)))

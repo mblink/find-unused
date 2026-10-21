@@ -51,6 +51,7 @@ object FindUnused {
       println("[find-unused] Checking inline givens")
       // An `inline given` that might be found can summon more when it's expanded, so keep walking the bodies of the
       // ones found until no more are
+      val universal = InlineSummons.universalClasses
       @annotation.tailrec
       def go(roots: Set[TermSymbol], summoned: Set[ClassSymbol], found: Map[Sym, TermSymbol]): Map[Sym, TermSymbol] =
         InlineSummons.summonedClasses(roots) match {
@@ -59,7 +60,7 @@ object FindUnused {
             refs.inlineGivens
           case Some(classes) =>
             val all = summoned ++ classes
-            val more = refs.inlineGivens.filter((s, g) => !found.contains(s) && InlineSummons.mightFind(all, g))
+            val more = refs.inlineGivens.filter((s, g) => !found.contains(s) && InlineSummons.mightFind(all, universal, g))
             if (more.isEmpty) found else go(more.values.toSet, all, found ++ more)
         }
 
