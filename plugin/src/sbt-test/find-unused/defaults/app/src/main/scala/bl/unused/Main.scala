@@ -75,10 +75,12 @@ object Api {
   export Impl.run
 }
 
-// A local method's default isn't reported
+// A local method's default isn't reported, and neither is a local class's, which a macro could read without the
+// bytecode scan seeing it
 object Local {
   def process(xs: List[Int]): Int = {
     def loop(rest: List[Int], acc: Int = 0): Int = rest.foldLeft(acc)(_ + _)
-    loop(xs, 0)
+    case class Settings(start: Int, step: Int = 1)
+    loop(xs, Settings(0, 2).start)
   }
 }

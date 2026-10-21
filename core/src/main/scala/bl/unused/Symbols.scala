@@ -100,11 +100,12 @@ object Symbols {
 
   /**
    * Whether `sym` is a default getter that's reported: not the forwarder an `export` generates for one, which can't
-   * be removed on its own, and not one of a local method, which has no name to report it under.
+   * be removed on its own, not one of a local method, which has no name to report it under, and not one of a local
+   * class, whose JVM name the bytecode scan can't predict, so it couldn't see a macro reading it.
    */
   def isReportedDefaultGetter(sym: Symbol)(using ctx: Context): Boolean =
     isDefaultGetter(sym) && !Some(sym).collect { case t: TermSymbol => t.isExport }.getOrElse(false) &&
-      defaultGetterParam(sym).nonEmpty
+      defaultGetterParam(sym).nonEmpty && Bytecode.memberKey(sym).nonEmpty
 
   /**
    * The name a symbol is reported under. That's `name`, except for default getters: the default value of `bar` in
