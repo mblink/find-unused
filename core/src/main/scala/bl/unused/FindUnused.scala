@@ -30,6 +30,7 @@ object FindUnused {
         debug,
         rootDirectory,
         packages,
+        Symbols.isInPackage(pkgSyms),
         sym => symbolIsValid(sym) && Symbols.isInPackage(pkgSyms)(sym),
         // Only `given`s are affected by implicit searches that happen after TASTy is pickled
         sym => Symbols.isGiven(sym) && bytecodeRefs.isReferenced(sym),
