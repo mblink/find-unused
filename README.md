@@ -141,6 +141,9 @@ case class Bar(foo: Foo) derives Decoder
 
 `Foo`'s derived `Decoder` is used by `Bar`'s derived `Decoder`, which is only visible in the bytecode.
 
+A `given` declared inside a method body compiles to a local variable, which the bytecode can't tell apart from any
+other, so one that's only summoned by an `inline` method or macro is still reported as unused.
+
 ### `transparent inline` methods
 
 As of Scala 3.10.0, the TASTy representation of calls to `transparent inline` methods is equivalent to the TASTy

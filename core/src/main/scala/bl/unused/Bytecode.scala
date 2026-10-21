@@ -85,8 +85,9 @@ object Bytecode {
    *
    * Direct recursion is also skipped, but it's visible in TASTy already.
    */
-  private def isSelfReference(cls: String, method: String, ref: Reference): Boolean =
-    (cls == ref.owner || cls ++ "$" == ref.owner) && (method == ref.name || method.startsWith(ref.name ++ "$"))
+  private def isSelfReference(cls: String, method: String, isStatic: Boolean, ref: Reference): Boolean =
+    (cls == ref.owner && (method == ref.name || method.startsWith(ref.name ++ "$"))) ||
+      (cls ++ "$" == ref.owner && isStatic && method == ref.name)
 
   /** A class's supertypes, and the references in its bytecode to members of classes in the analyzed packages */
   private case class ClassInfo(name: String, supertypes: List[String], references: Set[Reference])
@@ -96,24 +97,25 @@ object Bytecode {
     var supertypes = List.empty[String]
     val references = mutable.Set.empty[Reference]
 
-    def add(method: String, ref: Reference): Unit =
-      if (packagePrefixes.exists(ref.owner.startsWith) && !isSelfReference(cls, method, ref)) references += ref
+    def methodVisitor(method: String, isStatic: Boolean): MethodVisitor = {
+      def add(ref: Reference): Unit =
+        if (packagePrefixes.exists(ref.owner.startsWith) && !isSelfReference(cls, method, isStatic, ref)) references += ref
 
-    def methodVisitor(method: String): MethodVisitor =
       new MethodVisitor(Opcodes.ASM9) {
         override def visitMethodInsn(opcode: Int, owner: String, name: String, descriptor: String, isInterface: Boolean): Unit =
-          add(method, Reference(owner, name))
+          add(Reference(owner, name))
 
         // Only reads count as uses -- writes are field initialization
         override def visitFieldInsn(opcode: Int, owner: String, name: String, descriptor: String): Unit =
-          if (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) add(method, Reference(owner, name))
+          if (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) add(Reference(owner, name))
 
         override def visitInvokeDynamicInsn(name: String, descriptor: String, bsm: Handle, bsmArgs: Object*): Unit =
           bsmArgs.foreach {
-            case h: Handle => add(method, Reference(h.getOwner, h.getName))
+            case h: Handle => add(Reference(h.getOwner, h.getName))
             case _ => ()
           }
       }
+    }
 
     new ClassReader(bytes).accept(
       new ClassVisitor(Opcodes.ASM9) {
@@ -135,7 +137,7 @@ object Bytecode {
           descriptor: String,
           signature: String,
           exceptions: Array[String],
-        ): MethodVisitor = methodVisitor(name)
+        ): MethodVisitor = methodVisitor(name, (access & Opcodes.ACC_STATIC) != 0)
       },
       ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES,
     )
@@ -145,7 +147,7 @@ object Bytecode {
 
   private case class ClassFile(entry: Path, name: String, read: () => Array[Byte])
 
-  // Jars are opened with `use` so they stay open until their class files have been read
+  // Jars with class files in the analyzed packages are opened with `use` so they stay open until those have been read
   private def classFiles(entry: Path, packageDirs: List[String], use: Using.Manager): List[ClassFile] =
     if (Files.isDirectory(entry))
       packageDirs.map(entry.resolve).filter(Files.isDirectory(_)).flatMap(dir =>
@@ -154,11 +156,20 @@ object Bytecode {
         )
       )
     else if (Files.isRegularFile(entry) && entry.toString.endsWith(".jar")) {
-      val zip = use(new ZipFile(entry.toFile))
-      zip.entries.asScala
-        .filter(e => !e.isDirectory && e.getName.endsWith(".class") && packageDirs.exists(d => e.getName.startsWith(d ++ "/")))
-        .map(e => ClassFile(entry, e.getName, () => Using.resource(zip.getInputStream(e))(_.readAllBytes)))
-        .toList
+      val zip = new ZipFile(entry.toFile)
+      Either.catchNonFatal(zip.entries.asScala.filter(e =>
+        !e.isDirectory && e.getName.endsWith(".class") && packageDirs.exists(d => e.getName.startsWith(d ++ "/"))
+      ).toList) match {
+        case Right(entries) if entries.nonEmpty =>
+          use(zip)
+          entries.map(e => ClassFile(entry, e.getName, () => Using.resource(zip.getInputStream(e))(_.readAllBytes)))
+        case Right(_) =>
+          zip.close()
+          Nil
+        case Left(e) =>
+          zip.close()
+          throw e
+      }
     } else
       Nil
 
@@ -173,7 +184,9 @@ object Bytecode {
   def defaultThreads: Int = math.max(1, math.min(3, Runtime.getRuntime.availableProcessors / 2))
 
   def references(packages: Seq[String], classpath: Seq[Path], threads: Int = defaultThreads): BytecodeReferences = {
-    val packageDirs = packages.map(_.replace('.', '/')).toList
+    // A package nested in another analyzed package is already read with it
+    val allPackageDirs = packages.map(_.replace('.', '/')).toList.distinct
+    val packageDirs = allPackageDirs.filterNot(d => allPackageDirs.exists(o => o != d && d.startsWith(o ++ "/")))
     val packagePrefixes = packageDirs.map(_ ++ "/")
 
     // Reading and parsing the class files is almost all of the time this takes, so do it in parallel
