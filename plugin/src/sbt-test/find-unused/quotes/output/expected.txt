@@ -1,7 +1,11 @@
-Found 1 unused given
+Found 3 unused givens
 
 ┌────────────────────────────────────────────┬─────────────────────────────────────────────┐
 │ Instance                                   │ Location                                    │
 ├────────────────────────────────────────────┼─────────────────────────────────────────────┤
 │ bl.unused.Quoted.unusedEvidence.evidence$1 │ src/main/scala/bl/unused/Quoted.scala:17:29 │
+├────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ bl.unused.Quoted.partial.evidence$2        │ src/main/scala/bl/unused/Quoted.scala:23:31 │
+├────────────────────────────────────────────┼─────────────────────────────────────────────┤
+│ bl.unused.Quoted.inSplice.evidence$1       │ src/main/scala/bl/unused/Quoted.scala:26:23 │
 └────────────────────────────────────────────┴─────────────────────────────────────────────┘

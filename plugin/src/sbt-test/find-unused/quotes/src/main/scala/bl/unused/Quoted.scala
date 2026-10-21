@@ -15,6 +15,23 @@ object Quoted {
 
   // Not needed by the quote, so it's actually unused
   def unusedEvidence[A: Type](using Quotes): Expr[Int] = '{ 1 }
+
+  // Only the splice's type mentions `A`
+  def spliceType[A: Type](a: Expr[A])(using Quotes): Expr[String] = '{ $a.toString }
+
+  // The quote only mentions `A`, so `B`'s evidence is unused
+  def partial[A: Type, B: Type](using Quotes): Expr[List[A]] = '{ List.empty[A] }
+
+  // `A` is only mentioned by code inside the splice, which isn't healed, so its evidence is unused
+  def inSplice[A: Type](a: Expr[A])(using Quotes): Expr[Int] = '{ ${ size(a) } + 1 }
+
+  def size[T](a: Expr[T])(using Quotes): Expr[Int] = Expr(a.hashCode)
+
+  // Healing sees through the local alias
+  def aliased[A: Type](using Quotes): Expr[List[A]] = {
+    type L = List[A]
+    '{ Nil: L }
+  }
 }
 
 object QuotedTypes {
