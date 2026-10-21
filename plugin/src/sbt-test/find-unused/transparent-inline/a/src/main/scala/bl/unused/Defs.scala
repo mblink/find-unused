@@ -20,4 +20,15 @@ object Defs {
   }
 
   transparent inline def unused(): Int = 2
+
+  transparent inline def compound(s: String): String = s + "!"
+
+  // Its body is a call to another `transparent inline` method that doesn't reduce to a constant
+  transparent inline def nestedCall(s: String): String = compound(s)
 }
+
+trait Helpers {
+  transparent inline def inTrait(): Int = 3
+}
+
+object WithHelpers extends Helpers

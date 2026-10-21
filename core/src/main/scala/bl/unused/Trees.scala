@@ -154,16 +154,33 @@ object Trees {
       }
     ))
 
+  private val definitionSpansCache = mutable.Map.empty[TermSymbol, Set[(Int, Int)]]
+
+  // The offsets of every tree in a method's definition
+  private def definitionSpans(m: TermSymbol): Set[(Int, Int)] =
+    definitionSpansCache.synchronized(definitionSpansCache.getOrElseUpdate(m, {
+      val spans = mutable.Set.empty[(Int, Int)]
+      m.tree.foreach(new TreeTraverser {
+        override def traverse(tree: Tree): Unit = {
+          if (!tree.pos.isUnknown) spans += ((tree.pos.startOffset, tree.pos.endOffset))
+          super.traverse(tree)
+        }
+      }.traverse(_))
+      spans.toSet
+    }))
+
   /**
    * If this `Inlined` tree is the expansion of a `transparent inline` method, we consider the method used.
    *
    * `transparent inline` methods are expanded before TASTy is pickled, and the `Inlined` tree only records the
-   * top-level class the method is defined in as its `caller`. The root of the expansion is positioned inside the
-   * method's definition, though -- in its body for a regular method, or at the `${ ... }` splice for a macro -- so we
-   * look for the innermost `transparent inline` method in that class whose definition contains that position. Code
-   * from the call site, like inline arguments, is nested in `Inlined` trees with no `caller`, so it doesn't interfere.
+   * top-level class the method is defined in as its `caller`. The root of the expansion keeps the position of a tree in
+   * the method's definition, though -- its body for a regular method, or the `${ ... }` splice for a macro -- so we look
+   * for the `transparent inline` method in that class with a tree at exactly that position. Code from the call site,
+   * like inline arguments, is nested in `Inlined` trees with no `caller`, so it doesn't interfere.
    *
-   * Only the position's offsets are used, since the source file recorded for a macro expansion is the call site's.
+   * Only the position's offsets are used, since the source file recorded for a macro expansion is the call site's. They
+   * have to match exactly, because the root of a nested `transparent inline` call that reduces to a constant can keep
+   * the position of a tree in another file.
    */
   private def transparentInlineReferences(expr: TermTree, caller: TypeTree)(using ctx: Context): EnvR[References] =
     EnvR.env.flatMap { env =>
@@ -174,9 +191,8 @@ object Trees {
         .collect { case c: ClassSymbol if !pos.isUnknown && env.isInPackages(c) => c }
         .toList
         .flatMap(transparentInlineDefs)
-        .flatMap(m => m.tree.map(_.pos).filter(p => !p.isUnknown && p.startOffset <= pos.startOffset && pos.endOffset <= p.endOffset).map((m, _)))
-        .minByOption((_, p) => p.endOffset - p.startOffset)
-        .fold(References.empty)((m, _) => References.fromSymbol(m, References.used))
+        .filter(definitionSpans(_).contains((pos.startOffset, pos.endOffset)))
+        .foldMap(References.fromSymbol(_, References.used))
     }
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =

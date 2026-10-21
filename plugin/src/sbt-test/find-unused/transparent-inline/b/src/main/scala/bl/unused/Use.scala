@@ -10,5 +10,11 @@ object Use {
     Defs.viaMacro,
     Defs.viaQuotedArg[Int],
     Defs.Nested.nested(),
+    Defs.compound(n.toString),
+    Defs.nestedCall(n.toString),
+    // The expansion doesn't refer to the object it's called on
+    WithHelpers,
+    WithHelpers.inTrait(),
+    topLevel(),
   )
 }

@@ -19,7 +19,7 @@ See below for more details on setup and use.
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
 - [Known issues](#known-issues)
   - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
-  - [`transparent inline` methods that only call other `transparent inline` methods](#transparent-inline-methods-that-only-call-other-transparent-inline-methods)
+  - [Nested `transparent inline` calls that reduce to a constant](#nested-transparent-inline-calls-that-reduce-to-a-constant)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
 - [Debugging](#debugging)
 
@@ -144,7 +144,7 @@ case class Bar(foo: Foo) derives Decoder
 A `given` declared inside a method body compiles to a local variable, which the bytecode can't tell apart from any
 other, so one that's only summoned by an `inline` method or macro is still reported as unused.
 
-### `transparent inline` methods that only call other `transparent inline` methods
+### Nested `transparent inline` calls that reduce to a constant
 
 As of Scala 3.10.0, the TASTy representation of a call to a `transparent inline` method is the method's expanded body --
 there is no reference to the method itself. For example, the TASTy for `val bar` here is simply `val bar = 1`:
@@ -154,17 +154,20 @@ transparent inline def foo(): Int = 1
 val bar = foo()
 ```
 
-To work around this, find-unused uses the source positions recorded in the expansion, which point into the body of the
-`transparent inline` method it came from (or, for a macro, to its `${ ... }` splice). This doesn't work when a
-`transparent inline` method's body is itself a call to another `transparent inline` method, because the expansion only
-records the position of the innermost method's body. With Scala 3.10.0, in this example, `foo` is considered used, but
-`bar` is reported as unused (earlier Scala versions keep a separate expansion for `bar`, so it's considered used too):
+To work around this, find-unused uses the source positions recorded in the expansion, which point to a tree in the
+definition of the `transparent inline` method it came from (or, for a macro, to its `${ ... }` splice). Since Scala
+3.10.0, this doesn't work when a `transparent inline` method's body is a call to another `transparent inline` method
+that reduces to a constant, because the constant keeps the position of the inner method's body. In this example, `foo`
+is considered used, but `bar` is reported as unused:
 
 ```scala
 transparent inline def foo(x: Int): Int = x + 1
 transparent inline def bar(): Int = foo(41)
 val baz = bar()
 ```
+
+An object that's only used as the receiver of `transparent inline` calls isn't referenced by their expansions either,
+so it's reported as unused.
 
 ### Lack of support for multiple Scala versions
 
