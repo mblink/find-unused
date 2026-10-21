@@ -440,10 +440,10 @@ object Symbols {
         c.tree.exists(t => testSource.findFirstIn(t.pos.sourceFile.path).nonEmpty) ||
           Either.catchNonFatal(c.linearization.drop(1).exists(_.getAllOverloadedDecls(mainName).nonEmpty)).getOrElse(false)
       case t: TermSymbol =>
-        isMainMethod(t) || (!t.isMethod && Option(t.owner).exists {
-          case m: TermSymbol => isMainMethod(m)
+        isMainMethod(t) || Option(t.owner).exists {
+          case m: TermSymbol => isMainMethod(m) && m.paramSymss.exists(_.merge.contains(t))
           case _ => false
-        })
+        }
       case _ => false
     }
 
