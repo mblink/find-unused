@@ -218,9 +218,17 @@ object FindUnusedCli {
       System.exit(1)
     }
 
-  @main def explicits(args: Args): Unit = run(FindUnused.explicits, args, "explicit")
-  @main def givens(args: Args): Unit = run(FindUnused.givens, args, "given")
-  @main def implicits(args: Args): Unit = run(FindUnused.givens, args, "implicit")
+  // Transitive mode follows references through every kind of code, which the explicits and givens runners each skip
+  // half of, so it would report code that's used
+  private def oneKind(runner: FindUnused.Runner, args: Args, singularType: String): Unit =
+    if (args.transitive.value) {
+      System.err.println(red("--transitive needs the `all` command, which analyzes givens and explicits together"))
+      System.exit(1)
+    } else run(runner, args, singularType)
+
+  @main def explicits(args: Args): Unit = oneKind(FindUnused.explicits, args, "explicit")
+  @main def givens(args: Args): Unit = oneKind(FindUnused.givens, args, "given")
+  @main def implicits(args: Args): Unit = oneKind(FindUnused.givens, args, "implicit")
   @main def all(args: Args): Unit = run(FindUnused.all, args, "term")
 
   def main(args: Array[String]): Unit =

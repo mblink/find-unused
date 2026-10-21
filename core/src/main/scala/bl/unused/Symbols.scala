@@ -3,6 +3,7 @@ package bl.unused
 import cats.syntax.either.*
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
+import scala.collection.mutable
 import tastyquery.Contexts.Context
 import tastyquery.Names.*
 import tastyquery.Trees.*
@@ -417,8 +418,13 @@ object Symbols {
       case _ => false
     }
 
+  private val mainAnnotationCache = mutable.Map.empty[Context, Option[ClassSymbol]]
+
+  // Looked up once per run, since `isEntryPoint` asks for every method
   private def mainAnnotation(using ctx: Context): Option[ClassSymbol] =
-    Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption
+    mainAnnotationCache.synchronized(
+      mainAnnotationCache.getOrElseUpdate(ctx, Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption)
+    )
 
   /** Definitions that are used without being referenced: test classes, `main` methods, and objects that inherit one */
   def isEntryPoint(sym: Symbol)(using ctx: Context): Boolean =

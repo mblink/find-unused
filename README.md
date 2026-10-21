@@ -135,7 +135,7 @@ the outermost unused definition is reported: if an object is unused, its members
 
 Enable it in the sbt plugin with `Global / findUnusedTransitive := true`, or pass `--transitive` to the CLI, and run it
 with `findUnusedAll` (or the CLI's `all` command): `findUnusedExplicits` and `findUnusedGivens` only see one kind of
-code, so they can't follow references that pass through the other kind. Code that's only reached in other ways, like
+code, so they can't follow references that pass through the other kind, and refuse it. Code that's only reached in other ways, like
 reflection or a framework that instantiates classes from configuration, needs an exclusion.
 
 ## Known issues
