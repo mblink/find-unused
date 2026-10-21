@@ -144,7 +144,10 @@ case class References(
   }
 
   final lazy val computeUnused: Set[Sym] = {
-    val referenced = used ++ usedFrom.valuesIterator.flatten ++ externalOverrides ++ internalOverrides.keys ++ importRefs
+    // An entry point is used, and so is what it's in, e.g. the object a `main` method is in
+    def withOwners(s: Sym): List[Sym] = s :: owners.get(s).toList.flatMap(withOwners)
+    val referenced = used ++ usedFrom.valuesIterator.flatten ++ externalOverrides ++ internalOverrides.keys ++ importRefs ++
+      entryPoints.flatMap(withOwners)
     val allUsed = usedProxy.foldLeft(referenced) { case (acc, (k, v)) =>
       if (allSymsToCheckForUsage(k).exists(acc.contains)) acc ++ v.toSortedSet else acc
     }

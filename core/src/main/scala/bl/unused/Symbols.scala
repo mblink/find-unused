@@ -426,14 +426,24 @@ object Symbols {
       mainAnnotationCache.getOrElseUpdate(ctx, Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption)
     )
 
-  /** Definitions that are used without being referenced: test classes, `main` methods, and objects that inherit one */
+  private def isMainMethod(t: TermSymbol)(using ctx: Context): Boolean =
+    t.isMethod && (t.name == mainName || mainAnnotation.exists(t.hasAnnotation))
+
+  /**
+   * Definitions that are used without being referenced: test classes, `main` methods and their parameters, and objects
+   * that inherit one
+   */
   def isEntryPoint(sym: Symbol)(using ctx: Context): Boolean =
     sym match {
       case c: ClassSymbol =>
         // The source path recorded in TASTy, which doesn't include the directory the project is in
         c.tree.exists(t => testSource.findFirstIn(t.pos.sourceFile.path).nonEmpty) ||
           Either.catchNonFatal(c.linearization.drop(1).exists(_.getAllOverloadedDecls(mainName).nonEmpty)).getOrElse(false)
-      case t: TermSymbol => t.isMethod && (t.name == mainName || mainAnnotation.exists(t.hasAnnotation))
+      case t: TermSymbol =>
+        isMainMethod(t) || (!t.isMethod && Option(t.owner).exists {
+          case m: TermSymbol => isMainMethod(m)
+          case _ => false
+        })
       case _ => false
     }
 
