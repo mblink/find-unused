@@ -1,0 +1,28 @@
+package bl.unused
+
+class InClass {
+  given inClass: Show[Option[Int]] = _.fold("")(_.toString)
+
+  def shown: String = Summoners.withSummonInline[Option[Int]].show(Some(1))
+}
+
+object Outer {
+  object Inner {
+    given nested: Show[Option[Long]] = _.fold("")(_.toString)
+
+    def shown: String = Summoners.withSummonInline[Option[Long]].show(Some(1L))
+  }
+}
+
+object DefGivens {
+  given listShow[A](using s: Show[A]): Show[List[A]] = _.map(s.show).mkString
+
+  implicit def vectorShow[A](implicit s: Show[A]): Show[Vector[A]] = _.map(s.show).mkString
+
+  implicit val setShow: Show[Set[Int]] = _.mkString
+
+  def shown: String =
+    Summoners.withSummonInline[List[Int]].show(Nil) +
+      Summoners.withSummonInline[Vector[Int]].show(Vector()) +
+      Summoners.withSummonInline[Set[Int]].show(Set())
+}
