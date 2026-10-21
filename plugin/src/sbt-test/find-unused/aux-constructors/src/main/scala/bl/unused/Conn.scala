@@ -27,7 +27,7 @@ class Rarely(val n: Int) {
 }
 
 object Main {
-  @scala.annotation.unused // `main` is only an entry point in transitive mode
+  // An entry point, so it's used without being referenced
   def main(args: Array[String]): Unit =
     println((new Conn(args.head).port, new Conn("a", 1).host, new SecureConn().host, new Sized("x", 2).n, new Rarely(1).n, Pool.anon.size, Pool.fromCompanion.size))
 }
