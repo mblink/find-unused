@@ -195,6 +195,20 @@ object Trees {
         .foldMap(References.fromSymbol(_, References.used))
     }
 
+  // The type arguments of a call to a non-`transparent` inline method, which can pass them on to an implicit search
+  private def inlineTypeArgs(fun: TermTree, args: List[TypeTree])(using ctx: Context): EnvR[References] =
+    if (
+      Either.catchNonFatal(fun match {
+        case i: Ident => Symbols.getFromIdent(i)
+        case s: Select => Symbols.getFromSelect(s)
+        case _ => Set.empty
+      }).getOrElse(Set.empty).exists {
+        case t: TermSymbol => t.isInline && !t.isTransparentInline
+        case _ => false
+      }
+    ) References.empty.map(_.copy(inlineTypeArgs = args.flatMap(a => Either.catchNonFatal(a.toType).toOption).toSet))
+    else References.empty
+
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     EnvR.debug.flatMap { debug =>
       if (debug) println(s"************* tree: ${Debug.printer(tree)}")
@@ -271,7 +285,7 @@ object Trees {
         case Try(expr, cases, finalizer) => references(expr) |+| referencesL(cases) |+| referencesO(finalizer)
         case TypeAliasDefinitionTree(alias) => references(alias)
         case TypeApply(fun, args) =>
-          references(fun) |+| referencesL(args) |+|
+          references(fun) |+| referencesL(args) |+| inlineTypeArgs(fun, args) |+|
             (if (isTypeOf(fun)) quotedTypeParamReferences(args, Nil) else References.empty)
         case TypeBindingsTree(bindings, body) => referencesL(bindings) |+| references(body)
         case TypeCaseDef(pattern, body) => references(pattern) |+| references(body)

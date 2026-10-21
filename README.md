@@ -146,9 +146,10 @@ other, so one that's only summoned by an `inline` method or macro is still repor
 
 The bytecode doesn't help with `inline given`s, because they're expanded where they're summoned and leave no reference
 in the bytecode either, and find-unused can't tell which `inline given` a search found without reimplementing inlining.
-Instead, it considers an `inline given` used if its type class (or a subclass of it) is summoned by an `inline` method or
-macro that the analyzed code calls. So an `inline given` that's never summoned can still be reported, but an unused
-`inline given` of a type class that's summoned this way won't be:
+Instead, it considers an `inline given` used if its type class, or a class that type class extends, is summoned by an
+`inline` method or macro that the analyzed code calls, or by an `inline given` that's considered used, or is a type
+argument of a call to an `inline` method. So an `inline given` that's never summoned can still be reported, but an
+unused `inline given` of a type class that's summoned this way won't be:
 
 ```scala
 import scala.compiletime.summonInline
