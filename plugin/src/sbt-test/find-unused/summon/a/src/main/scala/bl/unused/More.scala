@@ -48,3 +48,14 @@ trait ClassShows {
 class MixesShows extends ClassShows {
   def shown: String = Summoners.withSummonInline[Seq[Byte]].show(Nil)
 }
+
+// The local `shownLocally` compiles to `shownLocally$1`, a method in the same class whose name starts with the given's,
+// but it's a use of it
+object LocalNamesake {
+  given shownLocally: Show[Seq[Int]] = _.mkString
+
+  def run: String = {
+    def shownLocally: String = Summoners.withSummonInline[Seq[Int]].show(Nil)
+    shownLocally
+  }
+}
