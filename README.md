@@ -162,6 +162,9 @@ inline def sorted[A](as: List[A]): List[A] = as.sorted(using summonInline[Orderi
 val foos = sorted(List(Foo(2), Foo(1)))
 ```
 
+The walk can't follow a macro's call to an abstract method into its implementations, so a type class that's only
+summoned there isn't seen, and its `inline given`s can be reported even when they're used.
+
 ### Nested `transparent inline` calls that reduce to a constant
 
 As of Scala 3.10.0, the TASTy representation of a call to a `transparent inline` method is the method's expanded body --
