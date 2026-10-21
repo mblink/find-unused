@@ -134,7 +134,7 @@ object References {
         If sym is an exported term:
 
           1. Look up the matching term symbol in the Context and consider the result used
-            - This might be a bug in tasty-query -- some symbols have different `hashCode`s when found in an
+            - This might be a bug in tasty-query -- some symbols are different `Symbol` objects when found in an
               `Ident` in `treeRefs` vs. when found as a `TermSymbol` in `symRefs`
           2. Look up the matching type symbol in the Context and consider the result used
             - This covers cases where an export is only used as a value, not also as a type

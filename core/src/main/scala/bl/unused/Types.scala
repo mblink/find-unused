@@ -9,8 +9,8 @@ object Types {
   def typeBoundsTypes(bounds: TypeBounds): List[Type] = List(bounds.low, bounds.high)
 
   def symbols(tpe: Type)(using ctx: Context): Set[Symbol] = {
-    @annotation.tailrec
     // `seen` holds the types themselves rather than their hash codes, since types don't override `hashCode`
+    @annotation.tailrec
     def go(acc: Set[Symbol], seen: Set[Type], types: List[Type]): Set[Symbol] =
       types.filterNot(seen.contains) match {
         case Nil => acc
