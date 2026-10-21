@@ -146,6 +146,7 @@ lazy val core = baseProj("core", "find-unused-core")
       else Seq("ch.epfl.scala" %% "tasty-query" % "1.10.0")
     ) ++ Seq(
       "com.lihaoyi" %% "pprint" % "0.9.6",
+      "org.ow2.asm" % "asm" % "9.11.1",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
   )

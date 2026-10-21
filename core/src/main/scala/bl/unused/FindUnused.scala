@@ -19,7 +19,21 @@ object FindUnused {
       implicit val ctx: Context = Context.initialize(ClasspathLoaders.read(javaModules ::: classpath.toList))
 
       val pkgSyms = packages.map(ctx.findPackage).toSet
-      val env = Env(debug, rootDirectory, packages, sym => symbolIsValid(sym) && Symbols.isInPackage(pkgSyms)(sym))
+
+      // Lazy so it's only read when a `given` is analyzed
+      lazy val bytecodeRefs = {
+        println("[find-unused] Reading bytecode")
+        Bytecode.references(packages, classpath)
+      }
+
+      val env = Env(
+        debug,
+        rootDirectory,
+        packages,
+        sym => symbolIsValid(sym) && Symbols.isInPackage(pkgSyms)(sym),
+        // Only `given`s are affected by implicit searches that happen after TASTy is pickled
+        sym => Symbols.isGiven(sym) && bytecodeRefs.isReferenced(sym),
+      )
 
       packages.foldMap { p =>
         println(s"[find-unused] Analyzing package $p")

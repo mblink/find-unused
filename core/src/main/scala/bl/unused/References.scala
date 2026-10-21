@@ -94,6 +94,7 @@ object References {
   val defined = (sym: Symbol) => (ctx: Context) ?=>
     if (Symbols.isValidDefinition(sym))
       (for {
+        env <- EnvR.env
         defSym <- Sym.fromSymbol(sym)
         usedSyms <- sym match {
           // If a symbol overrides another, consider it used
@@ -102,7 +103,14 @@ object References {
             Symbols.nextOverriddenSymbol(t).fold(Set.empty.pure[EnvR])(_ => Sym.fromSymbol(t).map(Set(_)))
           case _ => Set.empty.pure[EnvR]
         }
-        refs = References(defined = Set(defSym), used = usedSyms, usedProxy = Map.empty)
+        // If a symbol is referenced in bytecode, consider it used
+        // This accounts for `given`s summoned by inline methods and macros, which TASTy doesn't record
+        usedInBytecode =
+          if (env.usedInBytecode(sym)) {
+            if (env.debug) println(s"*********** used in bytecode: ${Symbols.name(sym)}")
+            Set(defSym)
+          } else Set.empty[Sym]
+        refs = References(defined = Set(defSym), used = usedSyms ++ usedInBytecode, usedProxy = Map.empty)
       } yield refs) |+| Annotations.checkForUnused(sym)
     else
       empty
