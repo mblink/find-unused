@@ -42,7 +42,7 @@ object Symbols {
 
   def constructorParamToParamAccessors(ctorParam: Symbol)(using ctx: Context): Set[Symbol] =
     Option(ctorParam.owner)
-      .collect { case t: TermSymbol if Symbols.isConstructor(t) => t } // t is the class constructor
+      .collect { case t: TermSymbol if Symbols.isPrimaryConstructor(t) => t } // t is the class constructor
       .flatMap(t => Option(t.owner))
       .collect { case c: ClassSymbol => c } // c is the class
       .fold(Set())(c => c.getDecl(ctorParam.name).toSet ++ c.getMember(ctorParam.name).toSet) // getDecl/getMember find the param accessors
@@ -96,7 +96,9 @@ object Symbols {
       case (DefaultGetterName(method, index), Some(owner: ClassSymbol)) =>
         // A constructor's default getters are in its class's companion
         val methods: List[(TermOrTypeSymbol, TermSymbol)] =
-          if (method == nme.Constructor) owner.companionClass.toList.flatMap(c => c.getAllOverloadedDecls(method).map(c -> _))
+          if (method == nme.Constructor)
+            // A primary constructor's defaults belong to its class, and an auxiliary constructor's to itself
+            owner.companionClass.toList.flatMap(c => c.getAllOverloadedDecls(method).map(d => (if (isPrimaryConstructor(d)) c else d) -> d))
           else owner.getAllOverloadedDecls(method).map(m => m -> m)
         // Only one overload of a method can have default values
         methods.iterator

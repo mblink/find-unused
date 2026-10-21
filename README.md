@@ -18,6 +18,7 @@ See below for more details on setup and use.
 - [Exclusions](#exclusions)
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
 - [Default values](#default-values)
+- [Auxiliary constructors](#auxiliary-constructors)
 - [Transitive mode](#transitive-mode)
 - [Known issues](#known-issues)
   - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
@@ -128,6 +129,13 @@ Macros that read default values, like JSON decoders filling in missing fields, a
 bytecode. A library that reads them by reflection at runtime isn't, so exclude the defaults of the classes it handles,
 e.g. with `--exclusion 'sym=^com\.example\.models\..*\(\w+ = \.\.\.\)$'`. A default is also excluded along with its
 method, and annotating the parameter with `@unused` keeps its default too.
+
+## Auxiliary constructors
+
+An auxiliary constructor (`def this(...)`) that nothing calls is reported as its class's `<init>`, e.g.
+`com.example.Foo.<init>`, at the constructor's position, which tells overloads apart. Constructors that are only called
+from Java or by reflection, like the no-argument constructors some serialization and dependency injection frameworks
+need, need an exclusion, e.g. `--exclusion 'sym=\.<init>$'` for all of them.
 
 ## Transitive mode
 
