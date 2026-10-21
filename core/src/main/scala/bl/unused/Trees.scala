@@ -101,14 +101,20 @@ object Trees {
    *
    * A splice's result type is healed too, but the code inside a splice runs at compile time and isn't healed, and a
    * nested quote is handled when `references` reaches it.
+   *
+   * The match is approximate: only a parameter of exactly `Type[A]` counts, so evidence like `Type[List[A]]` that healing
+   * could use is still reported, and a local `given Type[A]` that healing would pick instead doesn't stop the
+   * parameter from counting.
    */
   private def quotedTypeParamReferences(trees: List[Tree], types: List[Type])(using ctx: Context): EnvR[References] = {
     val typeParams = mutable.Set.empty[LocalTypeParamSymbol]
     val localAliases = mutable.Set.empty[TypeMemberSymbol]
+    // Resolving a type's symbols can throw in tasty-query, which shouldn't stop the analysis
     def addTypeParams(tpe: Type): Unit =
-      Types.symbols(tpe).foreach {
+      Either.catchNonFatal(Types.symbols(tpe)).getOrElse(Set.empty).foreach {
         case s: LocalTypeParamSymbol => typeParams += s
-        // Healing sees through local type aliases: `type L = List[A]; '{ Nil: L }` needs a `Type[A]`
+        // Healing sees through local type aliases: `type L = List[A]; '{ Nil: L }` needs a `Type[A]`. An alias in a local
+        // class or object isn't followed, so its `Type` is reported unused
         case t: TypeMemberSymbol if Option(t.owner).exists(_.isInstanceOf[TermSymbol]) && localAliases.add(t) =>
           t.typeDef match {
             case TypeMemberDefinition.TypeAlias(alias) => addTypeParams(alias)
