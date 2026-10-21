@@ -4,9 +4,13 @@ import cats.syntax.apply.*
 import cats.syntax.either.*
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
+import scala.collection.mutable
 import tastyquery.Contexts.*
+import tastyquery.Names.{termName, SignedName, TermName}
 import tastyquery.Symbols.*
+import tastyquery.Traversers.TreeTraverser
 import tastyquery.Trees.*
+import tastyquery.Types.*
 
 object Trees {
   def referencesO(tree: Option[Tree])(using ctx: Context): EnvR[References] = tree.fold(References.empty)(references)
@@ -58,6 +62,86 @@ object Trees {
     )
   }
 
+  private def isQuotedTypeOf(tpe: TypeOrMethodic, tparam: LocalTypeParamSymbol)(using ctx: Context): Boolean =
+    tpe match {
+      case a: AppliedType =>
+        (a.tycon, a.args) match {
+          case (tycon: TypeRef, List(arg: TypeRef)) =>
+            tycon.optSymbol.exists(_.displayFullName == "scala.quoted.Type") && arg.optSymbol.contains(tparam)
+          case _ => false
+        }
+      case _ => false
+    }
+
+  private val ofName = termName("of")
+
+  private def unsigned(name: TermName): TermName =
+    name match {
+      case s: SignedName => s.underlying
+      case n => n
+    }
+
+  // Checks the name before resolving the symbol, since this runs for every `TypeApply`
+  private def isTypeOf(fun: TermTree)(using ctx: Context): Boolean =
+    (fun match {
+      case i: Ident if i.name == ofName => Symbols.getFromIdent(i)
+      case s: Select if unsigned(s.name) == ofName => Symbols.getFromSelect(s)
+      case _ => Set.empty
+    }).exists(Symbols.name(_) == "scala.quoted.Type.of")
+
+  /**
+   * If these trees or types, which are part of a quote, refer to a method's type parameters, we consider the method's
+   * `scala.quoted.Type` parameters for those type parameters used, whether they're context bounds (`[A: Type]`) or
+   * explicit `using` parameters.
+   *
+   * The compiler heals type references in quotes with an implicit search for a `Type`, but it does so in the `staging`
+   * phase, after TASTy is pickled. For example, `'{ List.empty[A] }` becomes `'{ List.empty[evidence$1.Underlying] }`,
+   * and `Type.of[A]` -- including the ones the compiler synthesizes for `Expr.summon[F[A]]` -- becomes `evidence$1`.
+   * The TASTy only refers to `A`, so without this the `Type` would always appear unused.
+   *
+   * A splice's result type is healed too, but the code inside a splice runs at compile time and isn't healed, and a
+   * nested quote is handled when `references` reaches it.
+   *
+   * The match is approximate: only a parameter of exactly `Type[A]` counts, so evidence like `Type[List[A]]` that healing
+   * could use is still reported, and a local `given Type[A]` that healing would pick instead doesn't stop the
+   * parameter from counting.
+   */
+  private def quotedTypeParamReferences(trees: List[Tree], types: List[Type])(using ctx: Context): EnvR[References] = {
+    val typeParams = mutable.Set.empty[LocalTypeParamSymbol]
+    val localAliases = mutable.Set.empty[TypeMemberSymbol]
+    // Resolving a type's symbols can throw in tasty-query, which shouldn't stop the analysis
+    def addTypeParams(tpe: Type): Unit =
+      Either.catchNonFatal(Types.symbols(tpe)).getOrElse(Set.empty).foreach {
+        case s: LocalTypeParamSymbol => typeParams += s
+        // Healing sees through local type aliases: `type L = List[A]; '{ Nil: L }` needs a `Type[A]`
+        case t: TypeMemberSymbol if Option(t.owner).exists(_.isInstanceOf[TermSymbol]) && localAliases.add(t) =>
+          t.typeDef match {
+            case TypeMemberDefinition.TypeAlias(alias) => addTypeParams(alias)
+            case _ => ()
+          }
+        case _ => ()
+      }
+
+    types.foreach(addTypeParams)
+    new TreeTraverser {
+      override def traverse(tree: Tree): Unit =
+        tree match {
+          case s: Splice => addTypeParams(s.spliceType)
+          case _: Quote => ()
+          case t: TypeTree =>
+            Either.catchNonFatal(t.toType).foreach(addTypeParams)
+            super.traverse(tree)
+          case _ => super.traverse(tree)
+        }
+    }.traverse(trees)
+
+    typeParams.toList.flatMap(tparam =>
+      Option(tparam.owner).collect { case m: TermSymbol => m }.toList
+        .flatMap(_.paramSymss.flatMap(_.merge))
+        .collect { case p: TermSymbol if isQuotedTypeOf(p.declaredType, tparam) => p }
+    ).foldMap(References.fromSymbol(_, References.used))
+  }
+
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
     EnvR.debug.flatMap { debug =>
       if (debug) println(s"************* tree: ${Debug.printer(tree)}")
@@ -106,8 +190,10 @@ object Trees {
         case OpaqueTypeAliasDefinitionTree(bounds, alias) => references(bounds) |+| references(alias)
         case PackageDef(pid, stats) => Symbols.references(pid) |+| referencesL(stats)
         case PolyTypeDefinitionTree(tparams, body) => referencesL(tparams) |+| references(body)
-        case Quote(body, _) => references(body)
-        case QuotePattern(bindings, body, quotes, _) => referencesL(bindings) |+| references(body.merge) |+| references(quotes)
+        case Quote(body, bodyType) => references(body) |+| quotedTypeParamReferences(List(body), List(bodyType))
+        case QuotePattern(bindings, body, quotes, patternType) =>
+          referencesL(bindings) |+| references(body.merge) |+| references(quotes) |+|
+            quotedTypeParamReferences(List(body.merge), List(patternType))
         case RefinedTypeTree(underlying, refinements, refinedCls) =>
           references(underlying) |+| referencesL(refinements) |+| Symbols.references(refinedCls)
         case Return(expr, from) => referencesO(expr) |+| Symbols.references(from)
@@ -127,7 +213,9 @@ object Trees {
         case Throw(expr) => references(expr)
         case Try(expr, cases, finalizer) => references(expr) |+| referencesL(cases) |+| referencesO(finalizer)
         case TypeAliasDefinitionTree(alias) => references(alias)
-        case TypeApply(fun, args) => references(fun) |+| referencesL(args)
+        case TypeApply(fun, args) =>
+          references(fun) |+| referencesL(args) |+|
+            (if (isTypeOf(fun)) quotedTypeParamReferences(args, Nil) else References.empty)
         case TypeBindingsTree(bindings, body) => referencesL(bindings) |+| references(body)
         case TypeCaseDef(pattern, body) => references(pattern) |+| references(body)
         case Typed(expr, tpt) => references(expr) |+| references(tpt)
