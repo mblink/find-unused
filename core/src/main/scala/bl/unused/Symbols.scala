@@ -331,6 +331,11 @@ object Symbols {
     )
   }
 
+  /**
+   * Everything `sym` overrides. Following `nextOverriddenSymbol` only finds one member per class it reaches, so the
+   * members `sym` overrides in each of its class's parents are added too: `close()` in a class that extends both
+   * `AutoCloseable` and a trait declaring `close()` overrides both.
+   */
   def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
     @annotation.tailrec
     def go(acc: List[TermOrTypeSymbol], overriddenSyms: List[Symbol], addHead: Boolean): List[TermOrTypeSymbol] =
@@ -340,7 +345,12 @@ object Symbols {
         case _ :: rest => go(acc, rest, true)
       }
 
-    go(Nil, List(sym), false)
+    val inParents = sym match {
+      case t: TermSymbol if Option(t.owner).exists(_.isClass) && !isConstructor(t) && !t.isPrivate =>
+        Either.catchNonFatal(t.allOverriddenSymbols.toList).getOrElse(Nil)
+      case _ => Nil
+    }
+    (go(Nil, List(sym), false) ++ inParents).distinct
   }
 
   /**
@@ -400,23 +410,30 @@ object Symbols {
   private val mainName = termName("main")
   private val testSource = "(^|/)src/test/".r
 
+  /** The class the compiler generates to run a `@main` method, whose `main` method is synthetic */
+  def isMainWrapper(sym: Symbol)(using ctx: Context): Boolean =
+    sym match {
+      case c: ClassSymbol => Either.catchNonFatal(c.getAllOverloadedDecls(mainName).exists(_.isSynthetic)).getOrElse(false)
+      case _ => false
+    }
+
+  private def mainAnnotation(using ctx: Context): Option[ClassSymbol] =
+    Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption
+
   /** Definitions that are used without being referenced: test classes, `main` methods, and objects that inherit one */
-  def isEntryPoint(sym: Symbol, pos: Option[String])(using ctx: Context): Boolean =
+  def isEntryPoint(sym: Symbol)(using ctx: Context): Boolean =
     sym match {
       case c: ClassSymbol =>
-        pos.exists(testSource.findFirstIn(_).nonEmpty) ||
+        // The source path recorded in TASTy, which doesn't include the directory the project is in
+        c.tree.exists(t => testSource.findFirstIn(t.pos.sourceFile.path).nonEmpty) ||
           Either.catchNonFatal(c.linearization.drop(1).exists(_.getAllOverloadedDecls(mainName).nonEmpty)).getOrElse(false)
-      case t: TermSymbol =>
-        t.isMethod && (
-          t.name == mainName ||
-            Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption.exists(t.hasAnnotation)
-        )
+      case t: TermSymbol => t.isMethod && (t.name == mainName || mainAnnotation.exists(t.hasAnnotation))
       case _ => false
     }
 
   /** Whether `sym` is one of the symbols the analysis reports on, mirroring the cases in `references` below */
   def isDefinition(env: Env, sym: Symbol)(using ctx: Context): Boolean =
-    env.symbolIsValid(sym) && isValidDefinition(sym) && syntheticMemberOfCaseClass(sym).isEmpty && (sym match {
+    env.symbolIsValid(sym) && isValidDefinition(sym) && !isMainWrapper(sym) && syntheticMemberOfCaseClass(sym).isEmpty && (sym match {
       case t: TermSymbol => !t.isModuleVal && !IgnoredParam.unapply(t) && !DefaultParam.unapply(t)
       case c: ClassSymbol => !c.isRefinementClass
       case t: TypeMemberSymbol => !Option(t.owner).exists(RefinementClass.unapply)
@@ -464,7 +481,7 @@ object Symbols {
               (c match {
                 case RefinementClass() => References.empty
                 case _ => References.fromSymbol(c, References.defined)
-              }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
+              }) |+| c.tree.fold(References.empty)(Trees.references) |+| Trees.within(c)(c.declarations.foldMap(references))
 
             case t: TypeMemberSymbol =>
               if (debug) println(s"*********** TypeMemberSymbol: ${name(t)}")

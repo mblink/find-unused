@@ -133,9 +133,10 @@ that are only in the bytecode, like derived instances using each other through `
 code they come from too, so a chain of derived instances that's only used by unused code is reported in one run. Only
 the outermost unused definition is reported: if an object is unused, its members aren't listed separately.
 
-Enable it in the sbt plugin with `Global / findUnusedTransitive := true`, or pass `--transitive` to the CLI. Code that's
-only reached in other ways, like reflection or a framework that instantiates classes from configuration, needs an
-exclusion.
+Enable it in the sbt plugin with `Global / findUnusedTransitive := true`, or pass `--transitive` to the CLI, and run it
+with `findUnusedAll` (or the CLI's `all` command): `findUnusedExplicits` and `findUnusedGivens` only see one kind of
+code, so they can't follow references that pass through the other kind. Code that's only reached in other ways, like
+reflection or a framework that instantiates classes from configuration, needs an exclusion.
 
 ## Known issues
 

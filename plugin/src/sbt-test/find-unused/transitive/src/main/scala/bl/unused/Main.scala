@@ -2,7 +2,7 @@ package bl.unused
 
 // Entry points: a `main` method, an object that inherits one, and test classes (in src/test)
 object Main {
-  def main(args: Array[String]): Unit = println((Live.value, UsesShows.shown, LiveChainTop.top.show(None), Greeters.all.map(_.greet)))
+  def main(args: Array[String]): Unit = println((Live.value, UsesShows.shown, LiveChainTop.top.show(None), Greeters.all.map(_.greet("you")), Closing.closed, Aliases.id))
 }
 
 object Script extends App {
@@ -115,15 +115,15 @@ object UnusedRunner extends Runner {
 // `Greeter.greet` is used, but only `LiveGreeter` and the anonymous and given implementations are ever created, so
 // `DeadGreeter`, and `Greeting` which only it uses, are unused
 trait Greeter {
-  def greet: String
+  def greet(name: String): String
 }
 
 class LiveGreeter extends Greeter {
-  def greet: String = "hi"
+  def greet(name: String): String = "hi"
 }
 
 class DeadGreeter extends Greeter {
-  def greet: String = Greeting.text
+  def greet(name: String): String = Greeting.text
 }
 
 object Greeting {
@@ -131,7 +131,8 @@ object Greeting {
 }
 
 object Greeters {
-  val all: List[Greeter] = List(new LiveGreeter, new Greeter { def greet: String = Anonymous.text }, GivenGreeter.given_Greeter)
+  val all: List[Greeter] =
+    List(new LiveGreeter, new Greeter { def greet(name: String): String = Anonymous.text }, GivenGreeter.given_Greeter)
 }
 
 object Anonymous {
@@ -140,10 +141,57 @@ object Anonymous {
 
 object GivenGreeter {
   given Greeter with {
-    def greet: String = FromGiven.text
+    def greet(name: String): String = FromGiven.text
   }
 }
 
 object FromGiven {
   def text: String = "given"
+}
+
+// `close()` implements both `AutoCloseable`, which a library calls, and `Service`, which nothing calls
+trait Service {
+  def close(): Unit
+}
+
+class Db extends AutoCloseable with Service {
+  def close(): Unit = Pool.shutdown()
+}
+
+object Pool {
+  def shutdown(): Unit = ()
+}
+
+object Closing {
+  val closed: Unit = scala.util.Using.resource(new Db)(_ => ())
+}
+
+// Type members belong to their object, which a used type member keeps alive
+object DeadTypes {
+  type T = Int
+}
+
+object Types {
+  type Id = String
+
+  def onlyUsedByDeadCode: Int = 1
+}
+
+object UsesTypes {
+  def dead: Int = Types.onlyUsedByDeadCode
+}
+
+object Aliases {
+  import Types.Id
+
+  val id: Id = "id"
+}
+
+// An annotated parameter doesn't make its class used
+class NeverCreatedWithUnusedParam(@scala.annotation.unused x: Int)
+
+@main def mainAnnotated(): Unit = println(UsedByMainAnnotated.value)
+
+object UsedByMainAnnotated {
+  val value: Int = 3
 }

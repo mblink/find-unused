@@ -52,6 +52,9 @@ case class References(
   usedFrom: Map[Sym, Set[Sym]] = Map.empty,
   // Each definition's enclosing definition, which is used if the definition is
   owners: Map[Sym, Sym] = Map.empty,
+  // Definitions whose use doesn't make their enclosing definition used: parameters and the fields they declare, which
+  // are part of their method's or class's signature, and definitions local to a method, which only it can use
+  ownerIndependent: Set[Sym] = Set.empty,
   // Definitions that are used without being referenced, like `main` methods and test classes
   entryPoints: Set[Sym] = Set.empty,
   // Definitions that override something outside the analyzed code, so they can be called by it
@@ -106,17 +109,22 @@ case class References(
    * A reference from a method is attributed to the member it belongs to, found by dropping the suffixes the compiler
    * adds to the names of the methods it generates (`foo$lzyINIT1$$anonfun$1` is part of `foo`). One from an anonymous or
    * local class is attributed to the method that defines it (`outers`), and one from anywhere else in a class, like its
-   * constructor, to the class. A reference that can't be attributed counts no matter what.
+   * constructor or a local method lifted out of the method that defines it (`helper$1`), to the class. A reference
+   * that can't be attributed counts no matter what.
    */
   final def attributeBytecodeCallers(outers: Map[String, (String, Option[String])]): References = {
-    def prefixes(name: String): Iterator[String] =
-      Iterator.iterate(name)(n => n.take(n.lastIndexOf('$'))).takeWhile(_.nonEmpty)
+    def candidates(name: String): List[String] =
+      References.generatedSuffix.findFirstMatchIn(name) match {
+        case Some(m) => name :: candidates(name.take(m.start))
+        case None if name.isEmpty || References.liftedLocal.findFirstIn(name).nonEmpty => Nil
+        case None => List(name)
+      }
 
     def resolve(cls: String, method: Option[String], depth: Int): Set[Sym] = {
       val fromMethod = method.filterNot(m => m == "<init>" || m == "<clinit>").fold(Set.empty[Sym]) { m =>
         // A private member's expanded name, `bl$Foo$$$bar`, ends with its real name
         val unexpanded = Option(m.lastIndexOf("$$$")).filter(_ >= 0).map(i => m.drop(i + 3))
-        (prefixes(m) ++ unexpanded.iterator.flatMap(prefixes))
+        (candidates(m) ++ unexpanded.toList.flatMap(candidates)).iterator
           .map(n => jvmMembers.getOrElse((cls, n), Set.empty))
           .find(_.nonEmpty)
           .getOrElse(Set.empty)
@@ -130,7 +138,7 @@ case class References(
     val (attributed, roots) = bytecodeCallers.toList.foldLeft((usedFrom, used)) { case ((from, roots), (sym, callers)) =>
       val sources = callers.toList.map((cls, m) => resolve(cls, Some(m), 0))
       if (sources.exists(_.isEmpty)) (from, roots + sym)
-      else (sources.flatten.filterNot(_ == sym).foldLeft(from)((acc, s) => acc |+| Map(s -> Set(sym))), roots)
+      else (sources.flatten.foldLeft(from)((acc, s) => acc |+| Map(s -> Set(sym))), roots)
     }
     copy(usedFrom = attributed, used = roots, bytecodeCallers = Map.empty)
   }
@@ -173,7 +181,7 @@ case class References(
       val s = queue.dequeue()
       usedFrom.get(s).foreach(_.foreach(mark))
       usedProxy.get(s).foreach(_.toSortedSet.foreach(mark))
-      owners.get(s).foreach(mark)
+      if (!ownerIndependent.contains(s)) owners.get(s).foreach(mark)
       overridesByOwner.get(Some(s)).foreach(_.foreach(markOverride))
       overridesByBase.get(s).foreach(_.foreach(markOverride))
     }
@@ -184,6 +192,11 @@ case class References(
 }
 
 object References {
+  // The suffixes the compiler adds to the names of methods it generates for a member
+  private val generatedSuffix = """(?:\$\$anonfun\$\d+|\$lzyINIT\d+|\$adapted|\$default\$\d+|\$)$""".r
+  // The suffix of a local method lifted out of the method it's defined in
+  private val liftedLocal = """\$\d+$""".r
+
   given monoid: Monoid[References] =
     Monoid.instance(
       References(Set.empty, Set.empty, Map.empty),
@@ -196,6 +209,7 @@ object References {
         x.inlineTypeArgs ++ y.inlineTypeArgs,
         x.usedFrom |+| y.usedFrom,
         x.owners ++ y.owners,
+        x.ownerIndependent ++ y.ownerIndependent,
         x.entryPoints ++ y.entryPoints,
         x.externalOverrides ++ y.externalOverrides,
         x.internalOverrides |+| y.internalOverrides,
@@ -209,7 +223,7 @@ object References {
   lazy val empty: EnvR[References] = monoid.empty.pure[EnvR]
 
   val defined = (sym: Symbol) => (ctx: Context) ?=>
-    if (Symbols.isValidDefinition(sym))
+    if (Symbols.isValidDefinition(sym) && !Symbols.isMainWrapper(sym))
       (for {
         env <- EnvR.env
         defSym <- Sym.fromSymbol(sym)
@@ -241,12 +255,25 @@ object References {
         // The innermost enclosing definition, which for a member of an anonymous class is the method that creates it
         owners <- env.enclosing.headOption
           .fold(Map.empty[Sym, Sym].pure[EnvR])(o => Sym.fromSymbol(o).map(os => Map(defSym -> os)))
+        // A parameter's owner is its method, even a constructor's, whose class is the parameter's enclosing definition
+        ownerIndependent =
+          if ((env.enclosing.headOption ++ Option(sym.owner)).exists { case m: TermSymbol => m.isMethod; case _ => false } ||
+            Some(sym).collect { case t: TermSymbol => t.isParamAccessor }.getOrElse(false)) Set(defSym)
+          else Set.empty[Sym]
         inlineGivens = sym match {
           case t: TermSymbol if t.isInline && Symbols.isGiven(t) => Map(defSym -> t)
           case _ => Map.empty
         }
-        entryPoints = if (Symbols.isEntryPoint(sym, defSym.pos)) Set(defSym) else Set.empty[Sym]
-        refs = References(Set(defSym), Set.empty, Map.empty, inlineGivens = inlineGivens, owners = owners, entryPoints = entryPoints)
+        entryPoints = if (Symbols.isEntryPoint(sym)) Set(defSym) else Set.empty[Sym]
+        refs = References(
+          Set(defSym),
+          Set.empty,
+          Map.empty,
+          inlineGivens = inlineGivens,
+          owners = owners,
+          ownerIndependent = ownerIndependent,
+          entryPoints = entryPoints,
+        )
       } yield refs |+| overrides |+| usedInBytecode |+| jvmNames) |+| Annotations.checkForUnused(sym)
     else
       empty
