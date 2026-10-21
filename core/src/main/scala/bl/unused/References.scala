@@ -149,6 +149,15 @@ case class References(
     copy(usedFrom = attributed, used = roots, bytecodeCallers = Map.empty)
   }
 
+  // A default value isn't reported when its method is, or when its method isn't analyzed, e.g. a `given`'s default when
+  // only explicits are
+  private def isDefaultOfUnreported(unused: Set[Sym])(s: Sym): Boolean =
+    defaultValueOf.get(s).exists(m => unused.contains(m) || !defined.contains(m))
+
+  /** `isExcluded`, extended to the default values of excluded methods */
+  final def excludingDefaultsOf(isExcluded: Sym => Boolean): Sym => Boolean =
+    s => isExcluded(s) || defaultValueOf.get(s).exists(isExcluded)
+
   final lazy val computeUnused: Set[Sym] = {
     // An entry point is used, and so is what it's in, e.g. the object a `main` method is in
     def withOwners(s: Sym): List[Sym] = s :: owners.get(s).toList.flatMap(withOwners)
@@ -158,7 +167,7 @@ case class References(
       if (allSymsToCheckForUsage(k).exists(acc.contains)) acc ++ v.toSortedSet else acc
     }
     val unused = defined.filterNot(allUsed.contains)
-    unused.filterNot(s => defaultValueOf.get(s).exists(unused.contains))
+    unused.filterNot(isDefaultOfUnreported(unused))
   }
 
   /**
@@ -197,7 +206,7 @@ case class References(
     }
 
     val unused = defined.filterNot(s => alive.contains(s) || isExcluded(s))
-    unused.filterNot(s => owners.get(s).exists(unused.contains) || defaultValueOf.get(s).exists(unused.contains))
+    unused.filterNot(s => owners.get(s).exists(unused.contains) || isDefaultOfUnreported(unused)(s))
   }
 }
 
@@ -234,7 +243,7 @@ object References {
   lazy val empty: EnvR[References] = monoid.empty.pure[EnvR]
 
   val defined = (sym: Symbol) => (ctx: Context) ?=>
-    if (Symbols.isValidDefinition(sym) && !Symbols.isMainWrapper(sym))
+    if (Symbols.isValidDefinition(sym) && !Symbols.isMainWrapper(sym) && (!Symbols.isDefaultGetter(sym) || Symbols.isReportedDefaultGetter(sym)))
       (for {
         env <- EnvR.env
         defSym <- Sym.fromSymbol(sym)

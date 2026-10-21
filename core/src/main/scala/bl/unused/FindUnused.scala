@@ -20,7 +20,7 @@ object FindUnused {
 
       val pkgSyms = packages.map(ctx.findPackage).toSet
 
-      // Lazy so it's only read when a `given` is analyzed
+      // Lazy so it's only read when a `given` or a default value is analyzed
       lazy val bytecodeRefs = {
         println("[find-unused] Reading bytecode")
         Bytecode.references(packages, classpath)

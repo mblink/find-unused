@@ -1,4 +1,4 @@
-Found 8 unused explicits
+Found 11 unused explicits
 
 ┌────────────────────────────────────────┬───────────────────────────────────────────────┐
 │ Instance                               │ Location                                      │
@@ -18,4 +18,10 @@ Found 8 unused explicits
 │ bl.unused.NeverCalled.run              │ app/src/main/scala/bl/unused/Main.scala:28:7  │
 ├────────────────────────────────────────┼───────────────────────────────────────────────┤
 │ bl.unused.Main.neverDefaulted(b = ...) │ app/src/main/scala/bl/unused/Main.scala:33:30 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Sized.size(scale = ...)      │ app/src/main/scala/bl/unused/Main.scala:51:12 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Lists.curried(b = ...)       │ app/src/main/scala/bl/unused/Main.scala:60:23 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Lists.padded(width = ...)    │ app/src/main/scala/bl/unused/Main.scala:63:16 │
 └────────────────────────────────────────┴───────────────────────────────────────────────┘

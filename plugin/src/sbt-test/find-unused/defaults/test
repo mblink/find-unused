@@ -1,2 +1,5 @@
 -> findUnusedExplicits
 $ must-mirror output/expected.txt output/actual.txt
+> set Global / findUnusedTransitive := true
+-> findUnusedAll
+$ must-mirror output/expected-transitive.txt output/actual.txt

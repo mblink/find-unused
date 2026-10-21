@@ -126,7 +126,8 @@ a call that relied on it fails to compile.
 
 Macros that read default values, like JSON decoders filling in missing fields, are taken into account through the
 bytecode. A library that reads them by reflection at runtime isn't, so exclude the defaults of the classes it handles,
-e.g. with `--exclusion 'sym=^com\.example\.models\..*\(\w+ = \.\.\.\)$'`.
+e.g. with `--exclusion 'sym=^com\.example\.models\..*\(\w+ = \.\.\.\)$'`. A default is also excluded along with its
+method, and annotating the parameter with `@unused` keeps its default too.
 
 ## Transitive mode
 

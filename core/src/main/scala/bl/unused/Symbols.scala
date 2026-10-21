@@ -99,6 +99,14 @@ object Symbols {
     }
 
   /**
+   * Whether `sym` is a default getter that's reported: not the forwarder an `export` generates for one, which can't
+   * be removed on its own, and not one of a local method, which has no name to report it under.
+   */
+  def isReportedDefaultGetter(sym: Symbol)(using ctx: Context): Boolean =
+    isDefaultGetter(sym) && !Some(sym).collect { case t: TermSymbol => t.isExport }.getOrElse(false) &&
+      defaultGetterParam(sym).nonEmpty
+
+  /**
    * The name a symbol is reported under. That's `name`, except for default getters: the default value of `bar` in
    * `def foo(bar: Int = 1)` is `foo(bar = ...)`, and in `class Foo(bar: Int = 1)` it's `Foo(bar = ...)`.
    */
@@ -473,7 +481,8 @@ object Symbols {
 
   /** Whether `sym` is one of the symbols the analysis reports on, mirroring the cases in `references` below */
   def isDefinition(env: Env, sym: Symbol)(using ctx: Context): Boolean =
-    env.symbolIsValid(sym) && isValidDefinition(sym) && !isMainWrapper(sym) && syntheticMemberOfCaseClass(sym).isEmpty && (sym match {
+    env.symbolIsValid(sym) && isValidDefinition(sym) && !isMainWrapper(sym) && syntheticMemberOfCaseClass(sym).isEmpty &&
+      (!isDefaultGetter(sym) || isReportedDefaultGetter(sym)) && (sym match {
       case t: TermSymbol => !t.isModuleVal && !IgnoredParam.unapply(t) && !ParamOfDefaultGetter.unapply(t)
       case c: ClassSymbol => !c.isRefinementClass
       case t: TypeMemberSymbol => !Option(t.owner).exists(RefinementClass.unapply)

@@ -41,5 +41,44 @@ object Main {
     println((add(1), neverDefaulted(1, 3), config.copy(name = "y"), client.host, client.port, greeter.greet()))
     println((Flags("f", true), Defaults.default[Flags](1)))
     println(new Holder().read)
+    println((new Box().size(2), (new Box(): Sized).size(3), Lists.curried(1)(5), Lists.padded("a")(3), Lists.centered("b")(4)))
+    println((Impl.run(), Api.run(2), Local.process(List(1))))
+  }
+}
+
+// Always passed, whether `size` is called through the trait or the class
+trait Sized {
+  def size(scale: Int = 1): Int
+}
+
+class Box extends Sized {
+  def size(scale: Int): Int = scale
+}
+
+// Defaults after other parameter lists: `b` is always passed and `c` never is
+object Lists {
+  def curried(a: Int)(b: Int = 2)(using c: Int = 3): Int = a + b + c
+
+  extension (s: String) {
+    def padded(width: Int = 10): String = s.padTo(width, ' ')
+    // Excluded in build.sbt
+    def centered(width: Int = 10): String = s.padTo(width, ' ')
+  }
+}
+
+// An export forwards the method's default too, which can't be removed on its own
+object Impl {
+  def run(times: Int = 1): Int = times
+}
+
+object Api {
+  export Impl.run
+}
+
+// A local method's default isn't reported
+object Local {
+  def process(xs: List[Int]): Int = {
+    def loop(rest: List[Int], acc: Int = 0): Int = rest.foldLeft(acc)(_ + _)
+    loop(xs, 0)
   }
 }
