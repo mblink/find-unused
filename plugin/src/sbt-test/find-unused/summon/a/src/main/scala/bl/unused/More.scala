@@ -26,3 +26,14 @@ object DefGivens {
       Summoners.withSummonInline[Vector[Int]].show(Vector()) +
       Summoners.withSummonInline[Set[Int]].show(Set())
 }
+
+// A subclass's private given with the same name is a different member, so its use doesn't keep this one
+class PrivateBase {
+  private given shared: Show[Char] = _.toString
+}
+
+class PrivateSub extends PrivateBase {
+  private given shared: Show[Char] = _.toString
+
+  def shown: String = Summoners.withSummonInline[Char].show('a')
+}
