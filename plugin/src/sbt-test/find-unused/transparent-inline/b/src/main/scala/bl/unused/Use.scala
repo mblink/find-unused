@@ -9,6 +9,8 @@ object Use {
     Defs.callSiteOnly(n),
     Defs.viaMacro,
     Defs.viaQuotedArg[Int],
+    ConstantMacros.lifted,
+    ConstantMacros.reflected,
     Defs.Nested.nested(),
     Defs.compound(n.toString),
     Defs.nestedCall(n.toString),
