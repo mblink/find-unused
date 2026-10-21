@@ -13,6 +13,7 @@ import scala.collection.immutable.SortedSet
 import scala.util.chaining.*
 import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
+import tastyquery.Types.Type
 
 sealed case class Sym private (id: Int, name: String, pos: Option[String])
 object Sym {
@@ -44,6 +45,8 @@ case class References(
   // The non-`transparent` inline methods the analyzed code calls, and the `inline given`s it defines -- see `InlineSummons`
   inlineCalls: Set[TermSymbol] = Set.empty,
   inlineGivens: Map[Sym, TermSymbol] = Map.empty,
+  // The type arguments the analyzed code passes to non-`transparent` inline methods, which can pass them on to a search
+  inlineTypeArgs: Set[Type] = Set.empty,
 ) {
   final def removeUsed(sym: Symbol): References = {
     val c = Sym.id(sym)
@@ -95,6 +98,7 @@ object References {
         x.usedProxy |+| y.usedProxy,
         x.inlineCalls ++ y.inlineCalls,
         x.inlineGivens ++ y.inlineGivens,
+        x.inlineTypeArgs ++ y.inlineTypeArgs,
       ),
     )
 

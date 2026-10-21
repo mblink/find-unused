@@ -1,19 +1,17 @@
 Found 6 unused givens
 
-┌────────────────────────────────────────┬─────────────────────────────────────────────┐
-│ Instance                               │ Location                                    │
-├────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ bl.unused.PrivateBase.shared           │ a/src/main/scala/bl/unused/More.scala:32:17 │
-├────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ bl.unused.ClassShows.mixedUnused       │ a/src/main/scala/bl/unused/More.scala:45:9  │
-├────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ bl.unused.ShowInstances.unusedViaTrait │ a/src/main/scala/bl/unused/Show.scala:9:9   │
-├────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ bl.unused.Show.unused                  │ a/src/main/scala/bl/unused/Show.scala:18:9  │
-├────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ bl.unused.NeverSummoned.unusedInline   │ a/src/main/scala/bl/unused/Show.scala:28:16 │
-├────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ bl.unused.Show$package.unusedTopLevel  │ a/src/main/scala/bl/unused/Show.scala:33:7  │
-├────────────────────────────────────────┼─────────────────────────────────────────────┤
-│ bl.unused.PrivateShows.unusedPrivate   │ a/src/main/scala/bl/unused/Show.scala:37:17 │
-└────────────────────────────────────────┴─────────────────────────────────────────────┘
+┌────────────────────────────────────────────┬─────────────────────────────────────────────────────┐
+│ Instance                                   │ Location                                            │
+├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+│ bl.unused.InlineGivens.neverSummonedEither │ a/src/main/scala/bl/unused/InlineGivens.scala:36:16 │
+├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+│ bl.unused.ShowInstances.unusedViaTrait     │ a/src/main/scala/bl/unused/Show.scala:9:9           │
+├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+│ bl.unused.Show.unused                      │ a/src/main/scala/bl/unused/Show.scala:18:9          │
+├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+│ bl.unused.NeverSummoned.unusedInline       │ a/src/main/scala/bl/unused/Show.scala:28:16         │
+├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+│ bl.unused.Show$package.unusedTopLevel      │ a/src/main/scala/bl/unused/Show.scala:33:7          │
+├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+│ bl.unused.PrivateShows.unusedPrivate       │ a/src/main/scala/bl/unused/Show.scala:37:17         │
+└────────────────────────────────────────────┴─────────────────────────────────────────────────────┘

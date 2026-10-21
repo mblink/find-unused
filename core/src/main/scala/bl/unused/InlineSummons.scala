@@ -4,6 +4,7 @@ import cats.syntax.either.*
 import scala.collection.mutable
 import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
+import tastyquery.SymbolsOps.*
 import tastyquery.Traversers.TreeTraverser
 import tastyquery.Trees.*
 import tastyquery.Types.*
@@ -16,7 +17,8 @@ import tastyquery.Types.*
  * (see `Bytecode`), but an `inline given` is expanded where it's summoned and leaves no trace at all. We can't tell
  * which `inline given` a search found without reimplementing inlining, so instead we find the type classes those
  * searches look for, by walking the bodies of the inline methods the analyzed code calls and the macro
- * implementations they splice in. An `inline given` of one of those type classes is considered possibly used.
+ * implementations they splice in, and by looking at the type arguments those calls pass. An `inline given` of one of
+ * those type classes is considered possibly used.
  */
 object InlineSummons {
   // Guards against walking an unreasonable amount of library code
@@ -33,8 +35,16 @@ object InlineSummons {
     name.startsWith("scala.") || name.startsWith("java.")
   }
 
-  private def classes(tpe: Type)(using ctx: Context): Set[ClassSymbol] =
-    Types.symbols(tpe).collect { case c: ClassSymbol => c }
+  private def isInlineMethod(sym: Symbol): Boolean =
+    sym match {
+      case t: TermSymbol => t.isInline && t.isMethod
+      case _ => false
+    }
+
+  /** The classes a type mentions, including through a type alias it's an application of */
+  def classes(tpe: Type)(using ctx: Context): Set[ClassSymbol] =
+    Either.catchNonFatal((Types.symbols(tpe) ++ Types.symbols(tpe.dealias)).collect { case c: ClassSymbol => c })
+      .getOrElse(Set.empty)
 
   private def symbolOf(tree: Tree)(using ctx: Context): Set[Symbol] =
     tree match {
@@ -43,17 +53,24 @@ object InlineSummons {
       case _ => Set.empty
     }
 
-  /** @param roots the inline methods called by the analyzed code */
-  def summonedClasses(roots: Set[TermSymbol])(using ctx: Context): Set[ClassSymbol] = {
+  /**
+   * @param roots the inline methods called by the analyzed code
+   * @return `None` when there are too many methods to walk, in which case any class might be summoned
+   */
+  def summonedClasses(roots: Set[TermSymbol])(using ctx: Context): Option[Set[ClassSymbol]] = {
     val found = mutable.Set.empty[ClassSymbol]
-    val visited = mutable.Set.empty[TermSymbol]
+    val visited = mutable.Set.empty[(TermSymbol, Boolean)]
     val queue = mutable.Queue.empty[(TermSymbol, Boolean)]
+    var truncated = false
 
     // `inMacro` means the method runs at compile time, as part of a macro, so any method it calls can summon too
     def enqueue(sym: TermSymbol, inMacro: Boolean): Unit =
-      if (visited.size < maxMethods && !visited.contains(sym)) {
-        visited += sym
-        queue += ((sym, inMacro))
+      if (!visited.contains((sym, inMacro))) {
+        if (visited.size >= maxMethods) truncated = true
+        else {
+          visited += ((sym, inMacro))
+          queue += ((sym, inMacro))
+        }
       }
 
     def addTypes(tree: Tree): Unit =
@@ -71,10 +88,18 @@ object InlineSummons {
       new TreeTraverser {
         private var macroCode = inMacro
 
+        private def withMacroCode(value: Boolean)(traverseBody: => Unit): Unit = {
+          val outer = macroCode
+          macroCode = value
+          traverseBody
+          macroCode = outer
+        }
+
         override def traverse(tree: Tree): Unit =
           tree match {
-            // `summonInline[T]`, `summonAll[T]`, `Expr.summon[T]`, `Type.of[T]`, etc.
-            case TypeApply(fun, args) if symbolOf(fun).exists(isCompiletimeOrQuoted) =>
+            // `summonInline[T]`, `summonAll[T]`, `Expr.summon[T]`, `Type.of[T]`, etc., and inline methods, which can
+            // pass their type arguments on to those
+            case TypeApply(fun, args) if symbolOf(fun).exists(s => isCompiletimeOrQuoted(s) || isInlineMethod(s)) =>
               args.foreach(addTypes)
               super.traverse(tree)
 
@@ -83,11 +108,9 @@ object InlineSummons {
               cases.foreach(c => addTypes(c.pattern))
               super.traverse(tree)
 
-            case Splice(expr, _) =>
-              val outer = macroCode
-              macroCode = true
-              traverse(expr)
-              macroCode = outer
+            // The code in a splice runs at compile time, but the code in a quote runs wherever the macro expands it
+            case Splice(expr, _) => withMacroCode(true)(traverse(expr))
+            case Quote(body, _) => withMacroCode(false)(traverse(body))
 
             case _: (Ident | Select) =>
               symbolOf(tree).foreach {
@@ -101,16 +124,18 @@ object InlineSummons {
           }
       }.traverse(body)
 
-    roots.foreach(enqueue(_, false))
+    // Sorted so that what's cut off when there are too many methods doesn't depend on hash codes
+    roots.toList.sortBy(Symbols.name).foreach(enqueue(_, false))
     while (queue.nonEmpty) {
       val (sym, inMacro) = queue.dequeue()
-      Either.catchNonFatal(sym.tree).toOption.flatten.foreach {
+      Either.catchNonFatal(sym.tree.foreach {
         case d: DefDef => d.rhs.foreach(walk(_, inMacro))
+        case v: ValDef => v.rhs.foreach(walk(_, inMacro))
         case _ => ()
-      }
+      }): Unit
     }
 
-    found.toSet
+    Option.unless(truncated)(found.toSet)
   }
 
   private def resultType(tpe: TypeOrMethodic): TypeOrMethodic =
@@ -120,21 +145,18 @@ object InlineSummons {
       case t => t
     }
 
+  // Every class extends these, so finding one of them, e.g. in `TypeRepr.of[Any]`, says nothing about a search
+  private def universalClasses(using ctx: Context): Set[ClassSymbol] =
+    Set(ctx.defn.AnyClass, ctx.defn.MatchableClass, ctx.defn.ObjectClass, ctx.defn.ProductClass) ++
+      List("java.io.Serializable", "scala.Equals").flatMap(n => Either.catchNonFatal(ctx.findTopLevelClass(n)).toOption)
+
   /** Whether an implicit search for one of `summoned` might find the given `inline given` */
   def mightFind(summoned: Set[ClassSymbol], inlineGiven: TermSymbol)(using ctx: Context): Boolean = {
-    val typeClasses = Either.catchNonFatal(resultType(inlineGiven.declaredType)).toOption.toList.flatMap {
-      case a: AppliedType =>
-        a.tycon match {
-          case t: TypeRef => t.optSymbol.toList.flatMap {
-            case c: ClassSymbol => List(c)
-            case _ => classes(a).toList
-          }
-          case _ => classes(a).toList
-        }
-      case t: Type => classes(t).toList
-      case _ => Nil
-    }
+    val universal = universalClasses
     // A search for `Decoder[A]` can find a given of a subclass, like `ConfiguredDecoder[A]`
-    typeClasses.exists(c => Either.catchNonFatal(c.linearization).getOrElse(List(c)).exists(summoned.contains))
+    Either.catchNonFatal(resultType(inlineGiven.declaredType) match {
+      case t: Type => t.dealias.instanceClass.toList.flatMap(c => Either.catchNonFatal(c.linearization).getOrElse(List(c)))
+      case _ => Nil
+    }).getOrElse(Nil).exists(c => !universal.contains(c) && summoned.contains(c))
   }
 }
