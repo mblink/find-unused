@@ -42,7 +42,7 @@ object Main {
     println((Flags("f", true), Defaults.default[Flags](1)))
     println(new Holder().read)
     println((new Box().size(2), (new Box(): Sized).size(3), Lists.curried(1)(5), Lists.padded("a")(3), Lists.centered("b")(4)))
-    println((Impl.run(), Api.run(2), Local.process(List(1))))
+    println((Impl.run(), Api.run(2), Local.process(List(1)), ExportedApi.go()))
   }
 }
 
@@ -83,4 +83,13 @@ object Local {
     case class Settings(start: Int, step: Int = 1)
     loop(xs, Settings(0, 2).start)
   }
+}
+
+// Only called through the export, using the default
+object ExportedImpl {
+  def go(times: Int = 1): Int = times
+}
+
+object ExportedApi {
+  export ExportedImpl.go
 }
