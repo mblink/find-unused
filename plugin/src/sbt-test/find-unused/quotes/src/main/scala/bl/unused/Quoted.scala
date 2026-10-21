@@ -27,6 +27,15 @@ object Quoted {
 
   def size[T](a: Expr[T])(using Quotes): Expr[Int] = Expr(a.hashCode)
 
+  // A quote nested in a splice is healed too
+  def quoteInSplice[A: Type](using Quotes): Expr[List[A]] = '{ ${ '{ List.empty[A] } } }
+
+  // So is one through an alias in a local object
+  def aliasInObject[A: Type](using Quotes): Expr[List[A]] = {
+    object Aliases { type L = List[A] }
+    '{ Nil: Aliases.L }
+  }
+
   // Healing sees through the local alias
   def aliased[A: Type](using Quotes): Expr[List[A]] = {
     type L = List[A]
