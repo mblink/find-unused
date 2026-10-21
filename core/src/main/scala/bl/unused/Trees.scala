@@ -113,8 +113,7 @@ object Trees {
     def addTypeParams(tpe: Type): Unit =
       Either.catchNonFatal(Types.symbols(tpe)).getOrElse(Set.empty).foreach {
         case s: LocalTypeParamSymbol => typeParams += s
-        // Healing sees through local type aliases: `type L = List[A]; '{ Nil: L }` needs a `Type[A]`. An alias in a local
-        // class or object isn't followed, so its `Type` is reported unused
+        // Healing sees through local type aliases: `type L = List[A]; '{ Nil: L }` needs a `Type[A]`
         case t: TypeMemberSymbol if Option(t.owner).exists(_.isInstanceOf[TermSymbol]) && localAliases.add(t) =>
           t.typeDef match {
             case TypeMemberDefinition.TypeAlias(alias) => addTypeParams(alias)
