@@ -133,9 +133,11 @@ method, and annotating the parameter with `@unused` keeps its default too.
 ## Auxiliary constructors
 
 An auxiliary constructor (`def this(...)`) that nothing calls is reported as its class's `<init>`, e.g.
-`com.example.Foo.<init>`, at the constructor's position, which tells overloads apart. Constructors that are only called
-from Java or by reflection, like the no-argument constructors some serialization and dependency injection frameworks
-need, need an exclusion, e.g. `--exclusion 'sym=\.<init>$'` for all of them.
+`com.example.Foo.<init>`, at the constructor's position, which tells overloads apart, and its default values as
+`com.example.Foo.<init>(bar = ...)`. A `sym` exclusion can't tell overloads apart, so `sym=Foo\.<init>$` excludes all of
+`Foo`'s auxiliary constructors. Constructors that are only called from Java, by reflection, or by a library macro's
+expansion, like the no-argument constructors some serialization and dependency injection frameworks need, need an
+exclusion, e.g. `--exclusion 'sym=\.<init>$'` for all of them.
 
 ## Transitive mode
 
