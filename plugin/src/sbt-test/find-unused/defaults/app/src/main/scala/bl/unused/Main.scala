@@ -32,7 +32,7 @@ object Main {
   def add(a: Int, b: Int = 1): Int = a + b
   def neverDefaulted(a: Int, b: Int = 2): Int = a * b
 
-  @scala.annotation.unused // `main` is only an entry point in transitive mode
+  // An entry point, so it's used without being referenced
   def main(args: Array[String]): Unit = {
     println(args.toList)
     val config = Config("x", timeout = 10)
