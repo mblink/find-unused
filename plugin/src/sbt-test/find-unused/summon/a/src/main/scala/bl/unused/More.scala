@@ -37,3 +37,14 @@ class PrivateSub extends PrivateBase {
 
   def shown: String = Summoners.withSummonInline[Char].show('a')
 }
+
+// Mixed into a class, which gets a forwarder for each given that calls the trait's implementation, but that doesn't
+// make them used
+trait ClassShows {
+  given mixedUsed: Show[Seq[Byte]] = _.mkString
+  given mixedUnused: Show[Seq[Short]] = _.mkString
+}
+
+class MixesShows extends ClassShows {
+  def shown: String = Summoners.withSummonInline[Seq[Byte]].show(Nil)
+}
