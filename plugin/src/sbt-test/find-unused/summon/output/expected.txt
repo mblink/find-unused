@@ -1,4 +1,4 @@
-Found 7 unused givens
+Found 8 unused givens
 
 ┌────────────────────────────────────────────┬─────────────────────────────────────────────────────┐
 │ Instance                                   │ Location                                            │
@@ -6,6 +6,8 @@ Found 7 unused givens
 │ bl.unused.InlineGivens.neverSummonedEither │ a/src/main/scala/bl/unused/InlineGivens.scala:36:16 │
 ├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
 │ bl.unused.PrivateBase.shared               │ a/src/main/scala/bl/unused/More.scala:32:17         │
+├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+│ bl.unused.ClassShows.mixedUnused           │ a/src/main/scala/bl/unused/More.scala:45:9          │
 ├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
 │ bl.unused.ShowInstances.unusedViaTrait     │ a/src/main/scala/bl/unused/Show.scala:9:9           │
 ├────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
