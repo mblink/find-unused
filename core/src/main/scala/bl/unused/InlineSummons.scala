@@ -53,6 +53,9 @@ object InlineSummons {
       case _ => Set.empty
     }
 
+  private def isQuotedRuntime(fun: Tree, method: String)(using ctx: Context): Boolean =
+    symbolOf(fun).exists(s => Symbols.name(s) == s"scala.quoted.runtime.Expr.$method")
+
   /**
    * @param roots the inline methods called by the analyzed code
    * @return `None` when there are too many methods to walk, in which case any class might be summoned
@@ -111,6 +114,14 @@ object InlineSummons {
             // The code in a splice runs at compile time, but the code in a quote runs wherever the macro expands it
             case Splice(expr, _) => withMacroCode(true)(traverse(expr))
             case Quote(body, _) => withMacroCode(false)(traverse(body))
+
+            // Scala 3.3, which most libraries are still compiled with, pickles splices and quotes as these calls
+            case Apply(TypeApply(fun, _), List(expr)) if isQuotedRuntime(fun, "splice") =>
+              withMacroCode(true)(traverse(expr))
+            case Apply(Apply(TypeApply(fun, _), _), List(expr)) if isQuotedRuntime(fun, "nestedSplice") =>
+              withMacroCode(true)(traverse(expr))
+            case Apply(TypeApply(fun, _), List(body)) if isQuotedRuntime(fun, "quote") =>
+              withMacroCode(false)(traverse(body))
 
             case _: (Ident | Select) =>
               symbolOf(tree).foreach {
