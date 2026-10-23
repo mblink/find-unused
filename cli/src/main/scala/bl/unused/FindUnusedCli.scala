@@ -122,6 +122,9 @@ object FindUnusedCli {
           case Sym(_, name, Some(pos)) => (pos, 0, 0, name)
           case Sym(_, name, None) => (name, 0, 0, "")
         }
+        // An `export` can generate several symbols with the same name and position, e.g. a forwarder and a type alias,
+        // but symbols without a position, like overloads, are different
+        .distinctBy(sym => sym.pos.fold(Left(sym.id))(pos => Right((sym.name, pos))))
         .map(sym => (sym.name, sym.pos.getOrElse("")))
 
       val unneededExclusions =
