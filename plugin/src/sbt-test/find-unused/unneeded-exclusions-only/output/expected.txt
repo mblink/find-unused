@@ -1,0 +1,5 @@
+No unused terms found
+
+1 exclusion doesn't exclude anything and can be removed:
+
+  sym=^\Qbl.unused.Removed\E$

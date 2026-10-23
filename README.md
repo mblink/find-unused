@@ -17,6 +17,7 @@ See below for more details on setup and use.
     - [Example usage](#example-usage)
 - [Exclusions](#exclusions)
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
+  - [Exclusions that don't exclude anything](#exclusions-that-dont-exclude-anything)
 - [Default values](#default-values)
 - [Auxiliary constructors](#auxiliary-constructors)
 - [Transitive mode](#transitive-mode)
@@ -117,6 +118,19 @@ Global / findUnusedExclusions := Seq(
   FindUnusedExclusion(src = "...".r, sym = "...".r),
 )
 ```
+
+### Exclusions that don't exclude anything
+
+`findUnusedAll` (or the CLI's `all` command) lists the exclusions that don't exclude anything after its results, so
+they can be removed: ones that match nothing that would be reported without them, e.g. because the code they match was
+deleted or is used now. `findUnusedExplicits` and `findUnusedGivens` don't, since each one only sees one kind of code,
+and would list the exclusions for the other. An exclusion with several alternatives in one regex is only listed when
+none of them excludes anything. In [transitive mode](#transitive-mode), an exclusion is only listed if what it matches
+is used without any exclusions, so one that's only unnecessary because another exclusion keeps the code that uses what
+it matches isn't listed.
+
+The list only holds for the mode that was run: an exclusion that's unnecessary in default mode can still be needed in
+transitive mode, for code that only unused code uses. It doesn't change the exit code.
 
 ## Default values
 
