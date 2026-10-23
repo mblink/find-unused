@@ -56,9 +56,6 @@ object Symbols {
   def isGiven(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
 
-  def isValidDefinition(sym: Symbol): Boolean =
-    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym) && !isDefaultParam(sym)
-
   def isInPackage(pkgSyms: Set[PackageSymbol])(sym: Symbol): Boolean =
     sym match {
       case p: PackageSymbol => pkgSyms.contains(p) || Option(p.owner).exists(isInPackage(pkgSyms))
@@ -339,6 +336,11 @@ object Symbols {
     )
   }
 
+  /**
+   * Everything `sym` overrides. Following `nextOverriddenSymbol` only finds one member per class it reaches, so the
+   * members `sym` overrides in each of its class's parents are added too: `close()` in a class that extends both
+   * `AutoCloseable` and a trait declaring `close()` overrides both.
+   */
   def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
     @annotation.tailrec
     def go(acc: List[TermOrTypeSymbol], overriddenSyms: List[Symbol], addHead: Boolean): List[TermOrTypeSymbol] =
@@ -348,7 +350,12 @@ object Symbols {
         case _ :: rest => go(acc, rest, true)
       }
 
-    go(Nil, List(sym), false)
+    val inParents = sym match {
+      case t: TermSymbol if Option(t.owner).exists(_.isClass) && !isConstructor(t) && !t.isPrivate =>
+        Either.catchNonFatal(t.allOverriddenSymbols.toList).getOrElse(Nil)
+      case _ => Nil
+    }
+    (go(Nil, List(sym), false) ++ inParents).distinct
   }
 
   /**
@@ -373,37 +380,74 @@ object Symbols {
       )
     }
 
-  // Does the given Symbol or its owner have a DefaultGetterName as its name?
-  // It seems like `def`s with default params are duplicated as `DefDef`s with a `name` that's a `DefaultGetterParam`
-  private object DefaultParam {
-    private def isDefaultName(name: Name): Boolean =
-      name match {
-        case _: DefaultGetterName => true
+  // A method that computes a parameter's default value, like `foo$default$2`
+  private def isDefaultGetter(sym: Symbol): Boolean =
+    sym.name match {
+      case _: DefaultGetterName => true
+      case _ => false
+    }
+
+  // A wildcard (`_`) or tuple-destructuring parameter
+  private def isIgnoredParam(sym: Symbol): Boolean =
+    sym.name match {
+      case UniqueName(SimpleName(""), "_$" | "$", _) => true
+      case _ => false
+    }
+
+  private def isRefinementClass(sym: Symbol): Boolean =
+    Some(sym).collect { case c: ClassSymbol => c.isRefinementClass }.getOrElse(false)
+
+  private val mainName = termName("main")
+  private val testSource = "(^|/)src/test/".r
+
+  /** The class the compiler generates to run a `@main` method, whose `main` method is synthetic */
+  def isMainWrapper(sym: Symbol)(using ctx: Context): Boolean =
+    sym match {
+      case c: ClassSymbol => Either.catchNonFatal(c.getAllOverloadedDecls(mainName).exists(_.isSynthetic)).getOrElse(false)
+      case _ => false
+    }
+
+  private val mainAnnotationCache = Memo[Context, Option[ClassSymbol]]()
+
+  // Looked up once per run, since `isEntryPoint` asks for every method
+  private def mainAnnotation(using ctx: Context): Option[ClassSymbol] =
+    mainAnnotationCache(ctx)(Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption)
+
+  private def isMainMethod(t: TermSymbol)(using ctx: Context): Boolean =
+    t.isMethod && (t.name == mainName || mainAnnotation.exists(t.hasAnnotation))
+
+  /**
+   * Definitions that are used without being referenced: test classes, `main` methods and their parameters, and objects
+   * that inherit one
+   */
+  def isEntryPoint(sym: Symbol)(using ctx: Context): Boolean =
+    sym match {
+      case c: ClassSymbol =>
+        // The source path recorded in TASTy, which doesn't include the directory the project is in
+        c.tree.exists(t => testSource.findFirstIn(t.pos.sourceFile.path).nonEmpty) ||
+          Either.catchNonFatal(c.linearization.drop(1).exists(_.getAllOverloadedDecls(mainName).nonEmpty)).getOrElse(false)
+      case t: TermSymbol =>
+        isMainMethod(t) || Option(t.owner).exists {
+          case m: TermSymbol => isMainMethod(m) && m.paramSymss.exists(_.merge.contains(t))
+          case _ => false
+        }
+      case _ => false
+    }
+
+  /**
+   * Whether `sym` is one of the definitions the analysis reports on. Not compiler-generated code, constructors (used
+   * whenever their class is), parameters with default values, the class that runs a `@main` method, module vals (an
+   * `object` is reported as its class), wildcard parameters, default getters and their parameters, or refinement classes
+   * and their members.
+   */
+  def isDefinition(env: Env, sym: Symbol)(using ctx: Context): Boolean =
+    env.symbolIsValid(sym) && !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym) &&
+      !isDefaultParam(sym) && !isMainWrapper(sym) && (sym match {
+        case t: TermSymbol => !t.isModuleVal && !isIgnoredParam(t) && !isDefaultGetter(t) && !Option(t.owner).exists(isDefaultGetter)
+        case c: ClassSymbol => !c.isRefinementClass
+        case t: TypeMemberSymbol => !Option(t.owner).exists(isRefinementClass)
         case _ => false
-      }
-
-    def unapply(sym: Symbol): Boolean =
-      isDefaultName(sym.name) || Option(sym.owner).fold(false)(s => isDefaultName(s.name))
-  }
-
-  private object IgnoredParam {
-    def unapply(sym: Symbol): Boolean =
-      sym match {
-        case t: TermSymbol =>
-          t.name match {
-            // Wildcard, i.e. `_`
-            case UniqueName(SimpleName(""), "_$", _) => true
-            // Tuple destructuring
-            case UniqueName(SimpleName(""), "$", _) => true
-            case _ => false
-          }
-        case _ => false
-      }
-  }
-
-  private object RefinementClass {
-    def unapply(sym: Symbol): Boolean = Some(sym).collect { case c: ClassSymbol => c.isRefinementClass }.getOrElse(false)
-  }
+      })
 
   def references(sym: Symbol)(using ctx: Context): EnvR[References] =
     EnvR.hasSeenSymbol(sym).flatMap(seen =>
@@ -422,17 +466,13 @@ object Symbols {
               if (debug) println(s"*********** TermSymbol (module val): ${name(t)}")
               References.empty
 
-            case t @ IgnoredParam() =>
+            case t: TermSymbol if isIgnoredParam(t) =>
               if (debug) println(s"*********** TermSymbol (ignored param): ${name(t)}")
               References.empty
 
             case t: TermSymbol =>
               if (debug) println(s"*********** TermSymbol: ${name(t)}")
-              // Don't count default params as definitions
-              (t match {
-                case DefaultParam() => References.empty
-                case _ => References.fromSymbol(t, References.defined)
-              }) |+|
+              References.fromSymbol(t, References.defined) |+|
                 References.usedProxy(getMethodAndOverridesFromParam(t).map((_, Set(t))).toMap) |+|
                 References.usedProxy(t, getSuperParamsFromParam(t)) |+|
                 References.usedProxy(constructorParamToParamAccessors(t).map((_, Set(t))).toMap)
@@ -443,18 +483,13 @@ object Symbols {
 
             case c: ClassSymbol =>
               if (debug) println(s"*********** ClassSymbol: ${name(c)}, decls: ${c.declarations}")
-              (c match {
-                case RefinementClass() => References.empty
-                case _ => References.fromSymbol(c, References.defined)
-              }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
+              References.fromSymbol(c, References.defined) |+| c.tree.fold(References.empty)(Trees.references) |+|
+                Trees.within(c)(c.declarations.foldMap(references))
 
             case t: TypeMemberSymbol =>
               if (debug) println(s"*********** TypeMemberSymbol: ${name(t)}")
-              (Option(t.owner) match {
-                case Some(RefinementClass()) => References.empty
-                case _ => References.fromSymbol(t, References.defined)
-              }) |+|
-                (t.typeDef match {
+              References.fromSymbol(t, References.defined) |+|
+                Trees.within(t)(t.typeDef match {
                   case TypeMemberDefinition.TypeAlias(tpe) =>
                     Types.symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
                   case TypeMemberDefinition.AbstractType(bounds) =>
