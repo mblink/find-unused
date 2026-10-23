@@ -8,8 +8,8 @@ A Scala 3 tool that finds unused code by reading the TASTy files the compiler em
 [tasty-query](https://github.com/scalacenter/tasty-query), supplemented by a scan of the compiled bytecode for
 `given`s and default values that TASTy can't see being used. It ships as an sbt plugin and a standalone CLI jar.
 `README.md` documents user-facing setup, options, exclusions, default values, auxiliary constructors, transitive mode,
-and known limitations (unused `inline given`s of type classes that inline methods summon, nested `transparent inline`
-calls that reduce to a constant, single-Scala-version builds) — read it before changing behavior that's documented
+and known limitations (unused `inline given`s of type classes that inline methods summon, `transparent inline` methods
+that reduce to a constant, single-Scala-version builds) — read it before changing behavior that's documented
 there.
 
 ## Modules
@@ -173,9 +173,12 @@ a field, which the bytecode shows being read.
 **`transparent inline` expansions.** `transparent inline` calls are expanded before pickling, so TASTy only has the
 expansion, wrapped in an `Inlined` tree whose `caller` is the top-level class that defines the method. The root of the
 expansion keeps the position of a tree in the method's definition (its body, or the `${ ... }` splice for a macro), so
-`Trees.transparentInlineReferences` marks used the `transparent inline` method in that class with a tree at exactly
-that position. It compares offsets only, since for macro expansions the recorded source file is the call site's, and
-they must match exactly, since a nested call that reduces to a constant can keep offsets from another file. Call-site
+`Trees.transparentInlineReferences` marks used the `transparent inline` method anywhere in that class's tree (including
+local classes) with a tree at exactly that position, and the classes and objects enclosing it, since the expansion can
+drop the receiver. It compares offsets only, since the recorded source file is the call site's for macro expansions and
+the outer method's for constants. A nested call that reduces to a constant keeps the inner method's offsets, possibly
+from another file, so when the root is a `Literal`, `constantChain` also marks the methods in the class whose bodies are
+calls (`rootCalls`) leading to a method with a tree there; it can't tell those apart, so it marks them all. Call-site
 code inside an expansion is wrapped in `Inlined` trees with no `caller`.
 
 **Exports.** One `export` selector can generate several symbols — exporting an implicit class generates an implicit
