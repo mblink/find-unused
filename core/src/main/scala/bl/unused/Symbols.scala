@@ -444,6 +444,19 @@ object Symbols {
   private val mainName = termName("main")
   private val testSource = "(^|/)src/test/".r
 
+  private val ordinalName = termName("ordinal")
+
+  /**
+   * The `ordinal` method the compiler adds to a sealed class's companion to make it the class's `Mirror.Sum`. It tests
+   * for each child, which doesn't make them used.
+   */
+  def isSumMirrorOrdinal(sym: Symbol)(using ctx: Context): Boolean =
+    sym.name == ordinalName && isSynthetic(sym) && (Option(sym.owner) match {
+      case Some(c: ClassSymbol) =>
+        c.isModuleClass && Either.catchNonFatal(c.linearization.exists(name(_) == "scala.deriving.Mirror.Sum")).getOrElse(false)
+      case _ => false
+    })
+
   /** The class the compiler generates to run a `@main` method, whose `main` method is synthetic */
   def isMainWrapper(sym: Symbol)(using ctx: Context): Boolean =
     sym match {

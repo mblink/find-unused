@@ -9,6 +9,7 @@ import scala.collection.mutable
 import scala.jdk.CollectionConverters.*
 import scala.reflect.NameTransformer
 import scala.util.Using
+import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
 
 /**
@@ -63,11 +64,26 @@ case class BytecodeReferences(
         }
       )
     }
+
+  /**
+   * The classes and methods that reference an `object`; empty if nothing does. One nested in a class is reached through
+   * its accessor, and any other through the static `MODULE$` field holding its instance.
+   */
+  def moduleCallers(cls: ClassSymbol)(using ctx: Context): Set[Bytecode.Caller] =
+    Bytecode.internalClassName(cls).toSet.flatMap(moduleReads.getOrElse(_, Set.empty)) ++
+      cls.moduleValue.toSet.flatMap(callers)
+
+  // Reads of `MODULE$` by the class they read it from, so finding an object's isn't a search through all of them
+  private lazy val moduleReads: Map[String, Set[Bytecode.Caller]] =
+    references.getOrElse(Bytecode.moduleField, Set.empty).groupMap(_._1)(_._2)
 }
 
 object Bytecode {
   // The internal name of a class and the name of a method in it
   type Caller = (String, String)
+
+  // The static field holding an `object`'s instance
+  private[unused] val moduleField = "MODULE$"
 
   private def encode(name: String): String = NameTransformer.encode(name)
 
@@ -101,12 +117,13 @@ object Bytecode {
    *   3. Methods like `foo$lzyINIT1` that initialize a `lazy val`, and the `foo` getter that reads the `foo` field
    *   4. For a member of a trait, the static `foo$` implementation method, which calls `foo`
    *
-   * Direct recursion is also skipped, but it's visible in TASTy already. A local method lifted out of another member is
-   * named like `foo$1`, so a suffix starting with a digit is a different method, which can use `foo`.
+   * Direct recursion is also skipped, but it's visible in TASTy already. So is an `object` reading its own instance,
+   * which it and the static forwarders in its companion class do. A local method lifted out of another member is named
+   * like `foo$1`, so a suffix starting with a digit is a different method, which can use `foo`.
    */
   private def isSelfReference(cls: String, method: String, isStatic: Boolean, ref: Reference): Boolean =
-    (cls == ref.owner && (method == ref.name || isGeneratedFor(ref.name, method))) ||
-      (cls ++ "$" == ref.owner && isStatic && method == ref.name)
+    (cls == ref.owner && (method == ref.name || isGeneratedFor(ref.name, method) || ref.name == moduleField)) ||
+      (cls ++ "$" == ref.owner && isStatic && (method == ref.name || ref.name == moduleField))
 
   private def isGeneratedFor(member: String, method: String): Boolean =
     method.startsWith(member ++ "$") && !method.lift(member.length + 1).exists(_.isDigit)
@@ -172,7 +189,11 @@ object Bytecode {
           descriptor: String,
           signature: String,
           exceptions: Array[String],
-        ): MethodVisitor = methodVisitor(name, (access & Opcodes.ACC_STATIC) != 0)
+        ): MethodVisitor =
+          // A sealed class's companion is its `Mirror.Sum`, whose `ordinal` method compares with each child `object`,
+          // which doesn't make them used
+          if (name == "ordinal" && supertypes.contains("scala/deriving/Mirror$Sum")) null
+          else methodVisitor(name, (access & Opcodes.ACC_STATIC) != 0)
       },
       ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES,
     )

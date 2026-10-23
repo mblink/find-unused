@@ -223,6 +223,7 @@ object Trees {
         case ByNameTypeTree(result) => references(result)
         case CaseDef(pattern, guard, body) => references(pattern) |+| referencesO(guard) |+| references(body)
         case c @ ClassDef(_, rhs, symbol) => Symbols.references(symbol) |+| within(symbol)(templateReferences(rhs, Some(c)))
+        case DefDef(_, _, _, _, symbol) if Symbols.isSumMirrorOrdinal(symbol) => Symbols.references(symbol)
         case DefDef(name, paramLists, resultTpt, rhs, symbol) =>
           removeCaseClassIfSynthetic(symbol)(
             Symbols.references(symbol) |+|
@@ -303,6 +304,8 @@ object Trees {
         case t @ TypeWrapper(_) => Types.prefixReferences(t.toPrefix)
         // TODO - should implicits be added to References#used?
         case Unapply(fun, implicits, patterns) => references(fun) |+| referencesL(implicits) |+| referencesL(patterns)
+        // An `object`'s module val is initialized with `new Foo$()`, which would make every nested `object` look used
+        case ValDef(_, _, _, symbol) if symbol.isModuleVal => Symbols.references(symbol)
         case ValDef(_, tpt, rhs, symbol) =>
           removeCaseClassIfSynthetic(symbol)(Symbols.references(symbol) |+| within(symbol)(references(tpt) |+| referencesO(rhs)))
         case While(cond, body) => references(cond) |+| references(body)

@@ -20,7 +20,7 @@ object FindUnused {
 
       val pkgSyms = packages.map(ctx.findPackage).toSet
 
-      // Lazy so it's only read when a `given` or a default value is analyzed
+      // Lazy so it's only read when a `given`, a default value or an `object` is analyzed
       lazy val bytecodeRefs = {
         println("[find-unused] Reading bytecode")
         Bytecode.references(packages, classpath)
@@ -33,8 +33,13 @@ object FindUnused {
         Symbols.isInPackage(pkgSyms),
         sym => symbolIsValid(sym) && Symbols.isInPackage(pkgSyms)(sym),
         // `given`s can be summoned by implicit searches that happen after TASTy is pickled, and macros can read
-        // default values, e.g. to decode a missing JSON field
-        sym => if (Symbols.isGiven(sym) || Symbols.isDefaultGetter(sym)) bytecodeRefs.callers(sym) else Set.empty,
+        // default values, e.g. to decode a missing JSON field, and `object`s, e.g. to list the cases of an enumeration
+        // or to derive an instance for a `case object`
+        {
+          case c: ClassSymbol if c.isModuleClass => bytecodeRefs.moduleCallers(c)
+          case sym if Symbols.isGiven(sym) || Symbols.isDefaultGetter(sym) => bytecodeRefs.callers(sym)
+          case _ => Set.empty
+        },
       )
 
       val refs = packages.foldMap { p =>

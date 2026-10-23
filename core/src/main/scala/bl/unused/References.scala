@@ -143,6 +143,19 @@ case class References(
     unused.filterNot(isDefaultOfUnreported(unused))
   }
 
+  // A definition and the ones enclosing it, which it can't be used without, as transitive mode follows `owners`
+  private def withEnclosing(s: Sym): List[Sym] =
+    s :: (if (ownerIndependent.contains(s)) Nil else owners.get(s).toList.flatMap(withEnclosing))
+
+  /**
+   * `computeUnused` without what `isExcluded` matches, or encloses something it matches: excluded code is used by
+   * something that isn't analyzed, which needs the definitions around it too.
+   */
+  final def computeUnusedExcluding(isExcluded: Sym => Boolean): Set[Sym] = {
+    val excluded = defined.filter(isExcluded).flatMap(withEnclosing)
+    computeUnused.filterNot(excluded.contains)
+  }
+
   /**
    * Like `computeUnused`, but a reference only counts if it's made by a definition that's used itself, so code that's
    * only used by unused code -- including by itself, e.g. a recursive method -- is unused too.
@@ -166,7 +179,7 @@ case class References(
    * none of these doesn't change the output, since what it matches is used anyway, and so is what that uses.
    */
   final def unusedWithoutExclusions(transitive: Boolean): Set[Sym] =
-    if (transitive) transitivelyDead(_ => false) else computeUnused
+    if (transitive) transitivelyDead(_ => false) else defined.filter(withEnclosing(_).exists(computeUnused.contains))
 
   // Every definition `computeTransitivelyUnused` finds unused, including the ones nested in others
   private def transitivelyDead(isExcluded: Sym => Boolean): Set[Sym] = {
@@ -242,7 +255,11 @@ object References {
         defSym <- Sym.fromSymbol(sym)
         // An overriding symbol is used whenever a symbol it overrides is, since it can be called through a parent type,
         // and always if it overrides something outside the analyzed code
-        overrides <- sym match {
+        overrides <- (sym match {
+          // An `object` overrides what its module val does, e.g. an abstract `val` it implements
+          case c: ClassSymbol if c.isModuleClass => c.moduleValue.getOrElse(c)
+          case s => s
+        }) match {
           case t: TermOrTypeSymbol =>
             Symbols.allOverriddenSymbols(t) match {
               case Nil => empty
