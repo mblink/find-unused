@@ -83,3 +83,13 @@ compiled with Scala 3.3 have `scala.quoted.runtime.Expr.splice` calls instead of
 Add a scripted test (see the `scripted-test` skill) that fails before the fix, with a control case that must still be
 reported. Prefer a narrow, commented workaround in the style of the existing ones in `Symbols.scala` over changing the
 general traversal, and run `sbt 'test; scripted'`.
+
+To find out how often a tasty-query workaround fires on real code, whether it's still needed, or what to report
+upstream, count it: temporarily add a counter to the `.symbol` calls and `Either.catchNonFatal` sites involved, printed
+from a shutdown hook, assemble the CLI and run it on a project's classpath (the inputs `compare_builds.sh` in
+`validate-on-project` takes). On tasty-query 1.10.0 (October 2026), `Ident`/`Select#symbol` failed thousands of times on
+a large application, mostly for calls whose pickled signature is the method's as seen from the prefix, has no `erased`
+parameters, or erases a `Unit` result to `BoxedUnit`, but almost never on the Scala 3 compiler. Check what a fallback
+finds, too: one that compared parameter types with `Type.matches`, which accepts any two value types, took overloads
+for overrides. `tasty-query.md`, next to this file, records the causes found this way and the upstream fix that would
+remove each workaround.
