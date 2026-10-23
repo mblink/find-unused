@@ -23,6 +23,18 @@ Global / findUnusedOutputFile := Some(file("/absolute/scratch/all.txt"))
 Global / findUnusedExclusions := Seq() // see everything; replay the real exclusions offline (step 2)
 ```
 
+Don't run `publishLocal` while scripted tests run in another checkout of find-unused: scripted publishes the plugin
+locally under the same snapshot version and its tests resolve it from there, so the two overwrite each other and a
+test fails for no reason (or the project picks up another layer's build).
+
+On an sbt 2 project, a plain `sbt <command>` hands it to a background server for that directory, which keeps the
+build it loaded and can miss an edit to `project/plugins.sbt` or a new `.sbt` file, so results silently come from the
+wrong find-unused. Run each step in its own process with `sbt --server -batch "<a>; <b>"`, passing several commands as
+one `;`-separated argument (sbt 2 joins separate arguments into one command, so `set ... findUnusedAll` breaks), and
+stop a server you left running in the project (`project/target/active.json` names its socket). Settings only the
+snapshot has, like `Global / findUnusedTransitive`, go in the local `.sbt` file rather than `set`; if the build loads,
+the snapshot is the plugin it's using.
+
 With `findUnusedOutputFile` set, the CLI's `[find-unused] ...` progress lines are lost (the output file replaces
 them), so run once with `Global / findUnusedOutputFile := None` when you need them, e.g. to see whether the compiler
 plugin's records were used or find-unused fell back to checking `inline given`s conservatively.
@@ -127,3 +139,9 @@ with a stub for the `exclusions` that `ExclusionsPrelude.scala` expects.
   bytecode.
 - **Wildcard exports** (`export cats.syntax.parallel.*`) report every unused forwarder; that's correct, but the fix
   is `name as _` selectors or an exclusion.
+- **Removing `@nowarn`s the compiler's `-Wunused:nowarn` lists.** It's mostly right, but it has listed a `@nowarn` on a
+  class's `using` parameter that the compiler warns about once it's gone, and removing some `@nowarn`s can make it list
+  more that they hid. Remove what it lists, recompile without `-Werror` to collect both kinds of warning, put back the
+  ones whose removal exposed one, and repeat until nothing changes. Then run find-unused: the compiler doesn't warn
+  about every class parameter find-unused reports, so some of those need `@unused` instead, which `-Wunused:nowarn`
+  doesn't check. find-unused's own list of annotations that aren't needed is narrower; it skips class parameters.

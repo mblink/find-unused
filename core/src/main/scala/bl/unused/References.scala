@@ -64,6 +64,12 @@ case class References(
   defaultValueOf: Map[Sym, Sym] = Map.empty,
   // Symbols referenced by `import`s outside any definition, which don't use anything themselves
   importRefs: Set[Sym] = Set.empty,
+  // Symbols annotated `@unused` or `@nowarn("msg=unused")`, mapped to the symbols the annotation covers, e.g. a
+  // constructor parameter's field
+  unusedAnnotations: Map[Sym, Set[Sym]] = Map.empty,
+  // Symbols find-unused considers used without a reference in TASTy, e.g. from a `transparent inline` expansion, which
+  // the compiler may not see used
+  inferredRefs: Set[Sym] = Set.empty,
   // `given`s referenced in bytecode, with the classes and methods that reference them, and the JVM names of
   // definitions, which `attributeBytecodeCallers` uses to turn those references into references from definitions
   bytecodeCallers: Map[Sym, Set[Bytecode.Caller]] = Map.empty,
@@ -152,6 +158,30 @@ case class References(
     val allUsed = References.reachable(referenced)((s, _) => usedProxy.getOrElse(s, Set.empty))
     val unused = defined.filterNot(allUsed.contains)
     unused.filterNot(isDefaultOfUnreported(unused))
+  }
+
+  /**
+   * The symbols whose `@unused` or `@nowarn("msg=unused")` annotation isn't needed, because what it covers is referenced
+   * anyway. A constructor parameter and its field count as one, and a default value has to be referenced itself. Only
+   * references count, not being used through what a definition overrides, since the compiler can still warn then, and
+   * not references from what the annotation covers, like a recursive call, or ones find-unused infers.
+   */
+  final lazy val unnecessaryUnusedAnnotations: Set[Sym] = {
+    val annotated = unusedAnnotations.valuesIterator.flatten.toSet
+    val referencedFrom = usedFrom.toList.flatMap((from, to) => to.filter(annotated.contains).map(_ -> from)).groupMap(_._1)(_._2)
+
+    def isUnnecessary(covered: Set[Sym]): Boolean = {
+      // Not `used`: the annotation makes everything it covers a root, which other roots can't be told apart from
+      def isReferenced(s: Sym): Boolean =
+        !inferredRefs.contains(s) && (importRefs.contains(s) ||
+          referencedFrom.getOrElse(s, Nil).exists(from => !withOwners(from).exists(covered.contains)))
+      val reported = covered.filter(defined.contains)
+      val (defaults, others) = reported.partition(defaultValueOf.contains)
+      // Each default has to be referenced, and one of the rest, like a constructor parameter or its field
+      reported.nonEmpty && defaults.forall(isReferenced) && (others.isEmpty || others.exists(isReferenced))
+    }
+
+    unusedAnnotations.collect { case (sym, covered) if isUnnecessary(covered) => sym }.toSet
   }
 
   // A definition and the ones enclosing it, which it can't be used without, as transitive mode follows `owners`
@@ -290,6 +320,10 @@ object References {
       )
     )
 
+  // A reference find-unused infers, which an annotation that silences the compiler's unused warnings may still be needed for
+  def inferred(sym: Symbol)(using ctx: Context): EnvR[Refs] =
+    used(sym) |+| Sym.fromSymbol(sym).map(t => Refs(References(inferredRefs = Set(t))))
+
   // A symbol that's used no matter what references it
   def root(sym: Symbol)(using ctx: Context): EnvR[Refs] =
     Sym.fromSymbol(sym).map(s => Refs(References(used = Set(s))))
@@ -374,7 +408,7 @@ object Refs {
      * later value replaces an earlier one under the same key
      */
     def build: References = {
-      val defined, used, ownerIndependent, entryPoints, externalOverrides, importRefs = mutable.Set.empty[Sym]
+      val defined, used, ownerIndependent, entryPoints, externalOverrides, importRefs, inferredRefs = mutable.Set.empty[Sym]
       val inlineCalls = mutable.Set.empty[TermSymbol]
       val inlineTypeArgs = mutable.Set.empty[Type]
       val usedProxy, usedFrom, internalOverrides = mutable.Map.empty[Sym, Set[Sym]]
@@ -383,6 +417,7 @@ object Refs {
       val inlineGivens = mutable.Map.empty[Sym, TermSymbol]
       val owners, defaultValueOf = mutable.Map.empty[Sym, Sym]
       val jvmClasses = mutable.Map.empty[String, Sym]
+      val unusedAnnotations = mutable.Map.empty[Sym, Set[Sym]]
 
       // Left to right, so a later value replaces an earlier one under the same key
       val todo = mutable.Stack[Refs](r)
@@ -405,6 +440,8 @@ object Refs {
             addAll(internalOverrides, x.internalOverrides)
             defaultValueOf ++= x.defaultValueOf
             importRefs ++= x.importRefs
+            addAll(unusedAnnotations, x.unusedAnnotations)
+            inferredRefs ++= x.inferredRefs
             addAll(bytecodeCallers, x.bytecodeCallers)
             addAll(jvmMembers, x.jvmMembers)
             jvmClasses ++= x.jvmClasses
@@ -425,6 +462,8 @@ object Refs {
         internalOverrides.toMap,
         defaultValueOf.toMap,
         importRefs.toSet,
+        unusedAnnotations.toMap,
+        inferredRefs.toSet,
         bytecodeCallers.toMap,
         jvmMembers.toMap,
         jvmClasses.toMap,

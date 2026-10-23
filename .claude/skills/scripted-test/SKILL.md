@@ -17,7 +17,9 @@ section of `CLAUDE.md` for what each file does.
    directory needs its own copy of `project/plugins.sbt`; without it, loading the build fails with
    `Not found: findUnusedUseLocalClasspath`.
 3. Put sources in package `bl.unused`, which is what `findUnusedPackages` analyzes.
-4. Include a control case: something that should still be reported. A test where everything is used would also pass
+4. Include a control case: something that should still be reported. Default mode never reports a top-level `object`
+   or class, only its members, so a case about whether an object is reported has to be nested in another object.
+   Add new cases to a new file, or at the end of one, so the positions in other layers' expected outputs don't move. A test where everything is used would also pass
    if the analysis were disabled.
 5. If the test expects findings, the script uses `-> findUnusedGivens` (or `Explicits`/`All`), because finding unused
    code exits 1. A test can run several analyses in turn, e.g. `> set Global / findUnusedTransitive := true` between
@@ -47,6 +49,9 @@ capture; switch to `>` if that's the intended result.
 ```bash
 sbt 'plugin3/scripted find-unused/<name>'
 ```
+
+`capture.sh <test>` (next to this file) does this for every `must-mirror` line of a test at once, restores the script,
+and diffs each captured file against the expected one; pass `plugin2_12` as a second argument for sbt 1.
 
 Read the captured file, check that every row is what you expect, then copy it to `output/expected.txt`, and remove the
 `exec cp` line again. Copy the file rather than retyping the table, since `must-mirror` compares bytes exactly.
