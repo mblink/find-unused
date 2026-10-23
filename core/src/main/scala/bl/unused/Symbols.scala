@@ -119,10 +119,16 @@ object Symbols {
   def displayName(sym: Symbol)(using ctx: Context): String =
     defaultGetterParam(sym).fold(name(sym))((method, param) => s"${name(method)}(${param.name} = ...)")
 
+  private val declarationsByNameCache = Memo[Symbol, Map[String, List[Symbol]]]()
+
+  // An owner's declarations by name, since this is looked up for every type member and export
+  private def declarationsByName(owner: Symbol, declarations: => List[Symbol]): Map[String, List[Symbol]] =
+    declarationsByNameCache(owner)(declarations.groupBy(_.name.toString))
+
   def allMatchingSymbols(sym: Symbol)(using ctx: Context): List[Symbol] =
     Option(sym.owner).fold(Nil) {
-      case c: ClassSymbol => c.declarations.filter(_.name.toString == sym.name.toString)
-      case p: PackageSymbol => p.declarations.filter(_.name.toString == sym.name.toString)
+      case c: ClassSymbol => declarationsByName(c, c.declarations).getOrElse(sym.name.toString, Nil)
+      case p: PackageSymbol => declarationsByName(p, p.declarations).getOrElse(sym.name.toString, Nil)
       // I don't think TermSymbols have children...?
       case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => Nil
     }.filterNot(_ == sym)
@@ -430,7 +436,6 @@ object Symbols {
       )
     }
 
-
   // A wildcard (`_`) or tuple-destructuring parameter
   private def isIgnoredParam(sym: Symbol): Boolean =
     sym.name match {
@@ -506,12 +511,11 @@ object Symbols {
         case _ => false
       })
 
-  def references(sym: Symbol)(using ctx: Context): EnvR[References] =
-    EnvR.hasSeenSymbol(sym).flatMap(seen =>
+  def references(sym: Symbol)(using ctx: Context): EnvR[Refs] =
+    EnvR.markSeen(sym).flatMap(seen =>
       if (seen) References.empty
       else
         for {
-          _ <- EnvR.addSeenSymbol(sym)
           debug <- EnvR.debug
           res <- sym match {
             case s if syntheticMemberOfCaseClass(s).nonEmpty =>

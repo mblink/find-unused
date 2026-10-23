@@ -14,23 +14,21 @@ import tastyquery.Trees.*
 import tastyquery.Types.*
 
 object Trees {
-  def referencesO(tree: Option[Tree])(using ctx: Context): EnvR[References] = tree.fold(References.empty)(references)
+  def referencesO(tree: Option[Tree])(using ctx: Context): EnvR[Refs] = tree.fold(References.empty)(references)
 
-  def referencesL(trees: List[Tree])(using ctx: Context): EnvR[References] = trees.foldMap(references)
+  def referencesL(trees: List[Tree])(using ctx: Context): EnvR[Refs] = trees.foldMap(references)
 
   /** Attributes the references found by `refs` to `sym`, if it's one of the definitions the analysis reports on */
-  def within(sym: Symbol)(refs: EnvR[References])(using ctx: Context): EnvR[References] =
-    EnvR((env, syms) =>
-      refs.run(if (Symbols.isDefinition(env, sym)) env.copy(enclosing = sym :: env.enclosing) else env, syms)
-    )
+  def within(sym: Symbol)(refs: EnvR[Refs])(using ctx: Context): EnvR[Refs] =
+    refs.local(env => if (Symbols.isDefinition(env, sym)) env.copy(enclosing = sym :: env.enclosing) else env)
 
   // We have to handle `Template`s specially when the owner is a `ClassDef`
   // Objects (which are `ClassDef`s) contain a reference to themselves in their `Template`s,
   // causing them to always appear used
-  def templateReferences(tpl: Template, klass: Option[ClassDef])(using ctx: Context): EnvR[References] = {
+  def templateReferences(tpl: Template, klass: Option[ClassDef])(using ctx: Context): EnvR[Refs] = {
     val Template(constr, parents, self, body) = tpl
     val selfRefs0 = referencesO(self)
-    val selfRefs = klass.fold(selfRefs0)(c => selfRefs0.map(_.removeUsed(c.symbol)))
+    val selfRefs = klass.fold(selfRefs0)(c => selfRefs0.map(r => Refs(r.build.removeUsed(c.symbol))))
 
     references(constr) |+|
       referencesL(parents) |+|
@@ -45,12 +43,11 @@ object Trees {
    * This is necessary to verify whether a case class is truly used. Without this check, the synthetic members
    * always make it look like the class is used, since they refer to the class type in their signatures.
    */
-  private def removeCaseClassIfSynthetic(sym: Symbol)(refs: EnvR[References])(using ctx: Context): EnvR[References] =
+  private def removeCaseClassIfSynthetic(sym: Symbol)(refs: EnvR[Refs])(using ctx: Context): EnvR[Refs] =
     Symbols.syntheticMemberOfCaseClass(sym) match {
       case Some(cls) =>
-        EnvR((env, syms) =>
-          refs.run(env.copy(symbolIsValid = s => env.symbolIsValid(s) && !Symbols.isSyntheticMemberOfCaseClass(cls, s)), syms)
-        ).flatMap(_.removeUsed(cls).addUsedProxy(sym, Set(cls)))
+        refs.local(env => env.copy(symbolIsValid = s => env.symbolIsValid(s) && !Symbols.isSyntheticMemberOfCaseClass(cls, s)))
+          .flatMap(r => r.build.removeUsed(cls).addUsedProxy(sym, Set(cls)).map(Refs(_)))
       case None => refs
     }
 
@@ -58,7 +55,7 @@ object Trees {
    * If this `Lambda` represents an implementation of a trait/class using single abstract method (SAM) syntax, we consider
    * the parameters of the method in the trait/class used when the parameters of the lambda are used.
    */
-  private def singleAbstractMethodReferences(l: Lambda)(using ctx: Context): EnvR[References] = {
+  private def singleAbstractMethodReferences(l: Lambda)(using ctx: Context): EnvR[Refs] = {
     val thisParamsO = Some(l.meth.symbol).collect { case t: TermSymbol => t.paramSymss.flatMap(_.merge) }
     val superParamsO = Either.catchNonFatal(l.samClassSymbol).toOption
       .map(_.declarations.collect { case t: TermSymbol if t.isMethod && t.isAbstractMember && !Symbols.isConstructor(t) => t })
@@ -113,7 +110,7 @@ object Trees {
    * could use is still reported, and a local `given Type[A]` that healing would pick instead doesn't stop the
    * parameter from counting.
    */
-  private def quotedTypeParamReferences(trees: List[Tree], types: List[Type])(using ctx: Context): EnvR[References] = {
+  private def quotedTypeParamReferences(trees: List[Tree], types: List[Type])(using ctx: Context): EnvR[Refs] = {
     val typeParams = mutable.Set.empty[LocalTypeParamSymbol]
     val localAliases = mutable.Set.empty[TypeMemberSymbol]
     // Resolving a type's symbols can throw in tasty-query, which shouldn't stop the analysis
@@ -247,7 +244,7 @@ object Trees {
    * The classes and `object`s the method is in are considered used too, since the expansion doesn't have to refer to
    * the instance or `object` it was called on.
    */
-  private def transparentInlineReferences(expr: TermTree, caller: TypeTree)(using ctx: Context): EnvR[References] =
+  private def transparentInlineReferences(expr: TermTree, caller: TypeTree)(using ctx: Context): EnvR[Refs] =
     EnvR.env.flatMap { env =>
       val pos = expr.pos
       val defs = Some(caller.toType)
@@ -273,14 +270,14 @@ object Trees {
     }
 
   // The type arguments of a call to a non-`transparent` inline method, which can pass them on to an implicit search
-  private def inlineTypeArgs(fun: TermTree, args: List[TypeTree])(using ctx: Context): EnvR[References] =
+  private def inlineTypeArgs(fun: TermTree, args: List[TypeTree])(using ctx: Context): EnvR[Refs] =
     if (Symbols.fromTree(fun).exists {
       case t: TermSymbol => t.isInline && !t.isTransparentInline
       case _ => false
-    }) References.empty.map(_.copy(inlineTypeArgs = args.flatMap(a => Either.catchNonFatal(a.toType).toOption).toSet))
+    }) References.leaf(References(inlineTypeArgs = args.flatMap(a => Either.catchNonFatal(a.toType).toOption).toSet))
     else References.empty
 
-  def references(tree: Tree)(using ctx: Context): EnvR[References] =
+  def references(tree: Tree)(using ctx: Context): EnvR[Refs] =
     EnvR.debug.flatMap { debug =>
       if (debug) println(s"************* tree: ${Debug.printer(tree)}")
       tree match {
@@ -313,7 +310,7 @@ object Trees {
         case Import(expr, selectors) =>
           EnvR.env.flatMap(env =>
             if (env.enclosing.nonEmpty) references(expr) |+| referencesL(selectors)
-            else (references(expr) |+| referencesL(selectors)).map(r => References.monoid.empty.copy(importRefs = r.used))
+            else (references(expr) |+| referencesL(selectors)).map(r => Refs(References(importRefs = r.build.used)))
           )
         case ImportIdent(_) => References.empty
         case ImportSelector(imported, renamed, bound) => references(imported) |+| referencesO(renamed) |+| referencesO(bound)

@@ -70,7 +70,7 @@ object Annotations {
    *
    * If a matching annotation is found, we consider the symbol used.
    */
-  def checkForUnused(sym: Symbol)(using ctx: Context): EnvR[References] = {
+  def checkForUnused(sym: Symbol)(using ctx: Context): EnvR[Refs] = {
     // If the symbol is a class constructor parameter, attempt to find the corresponding param accessor in the class
     val paramAccessorSyms = Symbols.constructorParamToParamAccessors(sym)
     // If the symbol is a param accessor, attempt to find the corresponding constructor param in the class

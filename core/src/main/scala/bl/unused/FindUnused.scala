@@ -1,9 +1,12 @@
 package bl.unused
 
+import cats.syntax.either.*
 import cats.syntax.foldable.*
 import java.net.URI
 import java.nio.file.{Files, FileSystems, Path}
+import java.util.concurrent.{ExecutionException, FutureTask}
 import scala.jdk.CollectionConverters.*
+import scala.util.chaining.*
 import tastyquery.Contexts.Context
 import tastyquery.jdk.ClasspathLoaders
 import tastyquery.Symbols.{ClassSymbol, PackageSymbol, Symbol, TermSymbol}
@@ -16,8 +19,15 @@ object FindUnused {
       rootDirectory: Option[Path],
       packages: Seq[String],
       classpath: Seq[Path],
-      inlineGivenRecords: Seq[Path] = Nil,
+      inlineGivenRecords: Seq[Path],
     ): References = {
+      // The bytecode doesn't need tasty-query, so it's read while the classpath is loaded and analyzed
+      println("[find-unused] Reading bytecode")
+      val bytecodeScan = new FutureTask(() =>
+        Bytecode.references(packages, classpath).tap(r => println(s"[find-unused] Read bytecode of ${r.supertypes.size} classes"))
+      )
+      new Thread(bytecodeScan, "find-unused-bytecode").tap(_.setDaemon(true)).start()
+
       println("[find-unused] Initializing classpath")
 
       val javaModules = Files.list(FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules")).iterator.asScala.toList
@@ -25,18 +35,37 @@ object FindUnused {
       // `implicit val` instead of `given` so it's initialized eagerly for logging/timing purposes
       implicit val ctx: Context = Context.initialize(ClasspathLoaders.read(javaModules ::: classpath.toList))
 
-      val pkgSyms = packages.map(ctx.findPackage).toSet
+      // Waits for the scan the first time a `given`, a default value or an `object` is analyzed
+      analyze(
+        packages,
+        Either.catchNonFatal(bytecodeScan.get()).leftMap {
+          case e: ExecutionException => e.getCause
+          case e => e
+        }.valueOr(e => throw e),
+        debug,
+        rootDirectory,
+        inlineGivenRecords,
+      )
+    }
 
-      // Lazy so it's only read when a `given`, a default value or an `object` is analyzed
-      lazy val bytecodeRefs = {
-        println("[find-unused] Reading bytecode")
-        Bytecode.references(packages, classpath)
-      }
+    /**
+     * Analyzes `packages`, which `ctx` has loaded
+     *
+     * @param bytecode the references in the packages' bytecode, evaluated the first time they're needed
+     */
+    final def analyze(
+      packages: Seq[String],
+      bytecode: => BytecodeReferences,
+      debug: Boolean = false,
+      rootDirectory: Option[Path] = None,
+      inlineGivenRecords: Seq[Path] = Nil,
+    )(using ctx: Context): References = {
+      lazy val bytecodeRefs = bytecode
+      val pkgSyms = packages.map(ctx.findPackage).toSet
 
       val env = Env(
         debug,
         rootDirectory,
-        packages,
         Symbols.isInPackage(pkgSyms),
         sym => symbolIsValid(sym) && Symbols.isInPackage(pkgSyms)(sym),
         // `given`s can be summoned by implicit searches that happen after TASTy is pickled, and macros can read
@@ -51,8 +80,8 @@ object FindUnused {
 
       val refs = packages.foldMap { p =>
         println(s"[find-unused] Analyzing package $p")
-        Symbols.references(ctx.findPackage(p)).run(env, SeenSymbols.empty)._2
-      }
+        Symbols.references(ctx.findPackage(p)).run(env)
+      }.build
       val withBytecode = if (refs.bytecodeCallers.isEmpty) refs else refs.attributeBytecodeCallers(bytecodeRefs.outers)
       if (withBytecode.inlineGivens.isEmpty) withBytecode
       else if (inlineGivenRecords.isEmpty) markPossiblySummonedInlineGivens(withBytecode, debug)
@@ -82,7 +111,7 @@ object FindUnused {
     cls.tree.flatMap(_ => Bytecode.internalClassName(cls)).map(_.stripSuffix("$"))
 
   /** Consider `inline given`s used by the definitions find-unused's compiler plugin recorded expanding them */
-  def markRecordedInlineGivens(refs: References, records: Map[String, Set[String]]): References = {
+  private def markRecordedInlineGivens(refs: References, records: Map[String, Set[String]]): References = {
     val byName = refs.defined.groupBy(_.name)
     // The definition a name is in: a lambda or a local value that isn't analyzed is part of the definition around it
     def definitions(name: String): Set[Sym] =
@@ -95,7 +124,7 @@ object FindUnused {
   }
 
   /** Consider `inline given`s used if an implicit search after TASTy is pickled might find them, see `InlineSummons` */
-  def markPossiblySummonedInlineGivens(refs: References, debug: Boolean)(using ctx: Context): References =
+  private def markPossiblySummonedInlineGivens(refs: References, debug: Boolean)(using ctx: Context): References =
     if (refs.inlineGivens.isEmpty) refs
     else {
       println("[find-unused] Checking inline givens")
