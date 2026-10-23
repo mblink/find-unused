@@ -41,6 +41,8 @@ CI runs `sbt 'test; scripted'` and `python3 .claude/skills/validate-on-project/t
 local check. CI also runs scripted against older Scala
 versions (`scriptedScalaVersions` in `build.sbt`); reproduce one locally with
 `sbt -Dscripted.scala.version=3.8.4 'plugin3/scripted find-unused/<name>'`.
+A scripted test failing in CI under sbt 2 with `file referenced by the build does not exist:
+.../scala3-sbt-bridge-<version>.jar` (and no `actual.txt`) is a compiler-bridge cache flake, not a regression; rerun the job.
 
 `.github/workflows/*.yml` are **generated** from the `githubWorkflow*` settings in `build.sbt` by sbt-github-actions.
 Never hand-edit them; change `build.sbt` and regenerate, then commit both.
@@ -120,8 +122,15 @@ filter the result, and conservative in transitive mode, where they're also roots
 
 **Traversal.** `Symbols.references` dispatches on symbol kind and recurses into declarations; `Trees.references`
 exhaustively matches every tasty-query `Tree` case; `Types.symbols` walks a `Type` to the symbols it mentions.
-`Annotations.checkForUnused` marks a symbol used when it carries `@unused` or a `@nowarn` whose `msg` filter
-mentions "unused"/"never used".
+`Annotations.checkForUnused` marks a symbol used when it carries `@unused` or a `@nowarn` whose `msg` filter mentions
+"unused"/"never used", and records it in `unusedAnnotations` with the symbols the annotation covers, so the CLI's `all`
+command can list the annotations `References.unnecessaryUnusedAnnotations` finds: those whose symbols are all
+referenced, not counting the annotation's own roots, what overrides make used, references from inside what the
+annotation covers (found through `owners`), or the references find-unused infers for `transparent inline` expansions and
+quote type healing (`References.inferred`, recorded in `inferredRefs`), which the compiler may not count.
+`isCheckedForNeed` leaves out `export` forwarders, which copy their annotations, and class parameters and their fields,
+since the compiler doesn't count a class passing its own field to its constructor as a use. A `msg` filter starting
+`unused value` is about discarded values, so it doesn't make anything used.
 
 **Bytecode.** TASTy is pickled before the compiler's `inlining` phase, so implicit searches that happen while
 expanding non-`transparent` inline methods and macros (`summonFrom`, `summonAll`, `Expr.summon`, `summonInline` inside

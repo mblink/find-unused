@@ -143,7 +143,7 @@ object Trees {
       Option(tparam.owner).collect { case m: TermSymbol => m }.toList
         .flatMap(_.paramSymss.flatMap(_.merge))
         .collect { case p: TermSymbol if isQuotedTypeOf(p.declaredType, tparam) => p }
-    ).foldMap(References.fromSymbol(_, References.used))
+    ).foldMap(References.fromSymbol(_, References.inferred))
   }
 
   private val transparentInlineDefsCache = Memo[ClassSymbol, List[TermSymbol]]()
@@ -264,8 +264,8 @@ object Trees {
       }
       // An expansion inside one of those classes doesn't make it used
       (direct ++ viaConstant).distinct.foldMap(m =>
-        References.fromSymbol(m, References.used) |+|
-          enclosingClasses(m).filterNot(env.enclosing.contains).foldMap(References.fromSymbol(_, References.used))
+        References.fromSymbol(m, References.inferred) |+|
+          enclosingClasses(m).filterNot(env.enclosing.contains).foldMap(References.fromSymbol(_, References.inferred))
       )
     }
 
