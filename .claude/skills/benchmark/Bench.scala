@@ -1,15 +1,13 @@
 // Benchmark harness for find-unused's core, run with scala-cli against the core classpath -- see SKILL.md.
-// It uses core internals (`Env`, `Symbols.references`), so update it when those change.
+// It uses core internals (`FindUnused.Runner#analyze`, `Bytecode`), so update it when those change.
 
 import bl.unused.*
-import cats.syntax.foldable.*
 import java.net.URI
 import java.nio.file.{Files, FileSystems, Paths}
 import scala.io.Source
 import scala.jdk.CollectionConverters.*
 import tastyquery.Contexts.Context
 import tastyquery.jdk.ClasspathLoaders
-import tastyquery.Symbols.Symbol
 
 def time[A](f: => A): (A, Double) = {
   val t0 = System.nanoTime
@@ -33,18 +31,10 @@ def time[A](f: => A): (A, Double) = {
   val (ctx, ctxMs) = time(Context.initialize(ClasspathLoaders.read(javaModules ::: classpath)))
   println(f"tasty-query context: $ctxMs%.0f ms")
   given Context = ctx
-  val pkgSyms = packages.map(ctx.findPackage).toSet
-
-  def givens(bytecodeCallers: Symbol => Set[Bytecode.Caller]): References = {
-    val isInPackages = Symbols.isInPackage(pkgSyms)
-    val env = Env(false, None, packages, isInPackages, sym => Symbols.isGiven(sym) && isInPackages(sym), bytecodeCallers)
-    val refs = packages.foldMap(p => Symbols.references(ctx.findPackage(p)).run(env, SeenSymbols.empty)._2)
-    FindUnused.markPossiblySummonedInlineGivens(refs.attributeBytecodeCallers(bytecodeRefs.outers), debug = false)
-  }
 
   // The first analysis also warms the JIT, so compare the counts, not these two timings
-  val (without, withoutMs) = time(givens(_ => Set.empty))
-  val (withBytecode, withMs) = time(givens(sym => if (Symbols.isGiven(sym)) bytecodeRefs.callers(sym) else Set.empty))
+  val (without, withoutMs) = time(FindUnused.givens.analyze(packages, BytecodeReferences(Map.empty, Map.empty, Map.empty)))
+  val (withBytecode, withMs) = time(FindUnused.givens.analyze(packages, bytecodeRefs))
   println(f"givens analysis without bytecode: $withoutMs%.0f ms, unused=${without.computeUnused.size}")
   println(f"givens analysis with bytecode (scan excluded): $withMs%.0f ms, unused=${withBytecode.computeUnused.size}")
 
