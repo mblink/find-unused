@@ -227,7 +227,11 @@ object Symbols {
   /**
    * Find all symbols matching the given `Ident`
    *
-   * tasty-query sometimes throws an error on `Ident#symbol`, in which case we fall back to looking at `Ident#referenceType`.
+   * tasty-query (1.10.0) throws on `Ident#symbol` when it can't match the signature the compiler pickled for a call to
+   * the method's: the compiler uses the method's signature as seen from the prefix, e.g. for an inherited generic method
+   * called from an `object` (twirl's `_display_` in a template) or a given inherited by a companion, leaves out `erased`
+   * parameters, and erases a `Unit` result reached through an opaque alias or a type parameter to `BoxedUnit`. In that
+   * case we fall back to looking at `Ident#referenceType`.
    * If that's a `TermRef`, we look at its `prefix` in an attempt to identify the `ClassSymbol` that owns the `Ident`.
    * If we find a `ClassSymbol`, we look in it and its parent classes for all symbols with the same name as the `Ident`.
    */
@@ -298,7 +302,9 @@ object Symbols {
   /**
    * Find all symbols matching the given `Select`
    *
-   * tasty-query sometimes throws an error on `Select#symbol`, in which case we fall back to two approaches:
+   * tasty-query throws on `Select#symbol` for the reasons `getFromIdent` lists, mostly when resolving the qualifier's type,
+   * for members of a match type it doesn't reduce, and when reducing a match type crashes, in which case we fall back to
+   * two approaches:
    *
    *   1. Checking `Select#selectOwner` -- see `getFromSelectOwner` above
    *   2. Checking if the `qualifier` of the `Select` is an `Apply -- see `getFromSelectApply` above
@@ -320,84 +326,42 @@ object Symbols {
     }).getOrElse(Set.empty)
 
   /**
-   * Get the first symbol the given `TermOrTypeSymbol` overrides, if any
-   *
-   * tasty-query has a built-in `TermOrTypeSymbol#nextOverriddenSymbol` method, but it sometimes returns `None` unexpectedly
-   * We first try calling that, and then perform our fallback logic.
-   *
-   * If the given `sym` meets all of these criteria:
-   *
-   *   1. It belongs to a `ClassSymbol`
-   *   2. It is not a constructor method
-   *   3. It is not private
-   *   4. It is a method
-   *
-   * then we check the parent classes of the symbol's owner. For each one, we get method declarations with names
-   * matching the name of the symbol, and look for the first one where both of the following are true:
-   *
-   *   1. The method's parameter types match the parameter types of the method represented by `sym`
-   *   2. The method's result type matches the result type of the method represented by `sym`
-   *
-   * This logic is cobbled together from a handful of methods in tasty-query.
-   *
-   * TermOrTypeSymbol#nextOverriddenSymbol, which calls TermOrTypeSymbol#allOverriddenSymbols,
-   * which calls TermOrTypeSymbol#overriddenSymbol, which calls TermOrTypeSymbol#matchingDecl.
-   *
-   * For TermSymbols, matchingDecl performs a check against the parent class similar to what we do, but it uses
-   * `candidateType.matches(targetType)`, which returns `false` for some overridden methods.
-   *
-   * This is the ultimate problem we're working around. For some reason, both the parameter and result types match,
-   * but the overall type of the methods don't match.
+   * The first symbol `sym` overrides, if any. tasty-query's `nextOverriddenSymbol` misses some overrides, like ones whose
+   * parameter types are written with an `export`ed alias of a generic class, which `Type.matches` doesn't see through.
+   * So when it finds nothing, this looks for a non-private method of the same name in a parent class whose parameters
+   * erase to the same types as `sym`'s, both seen from `sym`'s class, which is how the compiler's signatures tell an
+   * override from an overload. A parameter whose erasure tasty-query can't tell matches any, and a method whose
+   * parameters can't be erased at all, e.g. because a type isn't on the classpath, matches none.
    */
-  def nextOverriddenSymbol(sym: TermOrTypeSymbol)(using ctx: Context): Option[TermOrTypeSymbol] = {
-    def listsMatch[A](l1: List[A], l2: List[A], cmp: (A, A) => Boolean): Boolean =
-      if (l1.length == l2.length) l1.zip(l2).forall(cmp.tupled)
-      else false
-
-    def typesMatch(t1: TypeOrMethodic, t2: TypeOrMethodic): Boolean =
-      (t1, t2) match {
-        case (m1: MethodType, m2: MethodType) =>
-          val paramsMatch = listsMatch(m1.paramTypes, m2.paramTypes, typesMatch)
-          val resultMatch = typesMatch(m1.resultType, m2.resultType)
-
-          paramsMatch && resultMatch
-
-        case (p1: PolyType, p2: PolyType) =>
-          val paramsMatch = listsMatch(p1.paramTypeBounds, p2.paramTypeBounds, _.isSameBounds(_))
-          val resultMatch = typesMatch(p1.resultType, p2.resultType)
-
-          paramsMatch && resultMatch
-
-        case _ => t1.matches(t2)
-      }
-
-    sym.nextOverriddenSymbol.orElse(
-      sym match {
-        case t: TermSymbol if t.owner.isClass && !isConstructor(t) && !t.isPrivate =>
-          val ownerClass = t.owner.asClass
-          val ownerType = ownerClass.thisType
-          val targetType = t.typeAsSeenFrom(ownerType)
-
-          ownerClass.linearization.drop(1).collectFirst(Function.unlift { parentClass =>
-            val candidates = parentClass.getAllOverloadedDecls(t.name).filterNot(_.isPrivate)
-
-            candidates.find { candidate =>
-              typesMatch(candidate.typeAsSeenFrom(ownerType), targetType)
-            }
+  def nextOverriddenSymbol(sym: TermOrTypeSymbol)(using ctx: Context): Option[TermOrTypeSymbol] =
+    sym.nextOverriddenSymbol.orElse(sym match {
+      case t: TermSymbol if t.owner.isClass && !isConstructor(t) && !t.isPrivate =>
+        val site = t.owner.asClass.thisType
+        def erasedParams(m: TermSymbol) = Either.catchNonFatal(m.erasedParamsAsSeenFrom(site)).toOption
+        // Only erased if there's a candidate, which most methods don't have
+        lazy val params = erasedParams(t)
+        t.owner.asClass.linearization.drop(1).iterator
+          .flatMap(_.getAllOverloadedDecls(t.name).filterNot(_.isPrivate))
+          .find(c => (params, erasedParams(c)) match {
+            case (Some(ps), Some(cs)) =>
+              ps.sizeCompare(cs) == 0 && ps.lazyZip(cs).forall((p, c) => p.isEmpty || c.isEmpty || p == c)
+            case _ => false
           })
-
-        case _ =>
-          None
-      }
-    )
-  }
+      case _ => None
+    })
 
   /**
    * Everything `sym` overrides. Following `nextOverriddenSymbol` only finds one member per class it reaches, so the
    * members `sym` overrides in each of its class's parents are added too: `close()` in a class that extends both
    * `AutoCloseable` and a trait declaring `close()` overrides both.
    */
-  def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
+  def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] =
+    allOverriddenSymbolsCache(sym)(computeAllOverriddenSymbols(sym))
+
+  // Memoized, since it's asked for each method and once more for each of its parameters
+  private val allOverriddenSymbolsCache = Memo[TermOrTypeSymbol, List[TermOrTypeSymbol]]()
+
+  private def computeAllOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
     @annotation.tailrec
     def go(acc: List[TermOrTypeSymbol], overriddenSyms: List[Symbol], addHead: Boolean): List[TermOrTypeSymbol] =
       overriddenSyms match {
@@ -443,8 +407,8 @@ object Symbols {
       case _ => false
     }
 
-  private def isRefinementClass(sym: Symbol): Boolean =
-    Some(sym).collect { case c: ClassSymbol => c.isRefinementClass }.getOrElse(false)
+  // The class of a refinement type, like `{ def foo: Int }`
+  private def isRefinementClass(sym: Symbol): Boolean = sym.name == tpnme.RefinedClassMagic
 
   private val mainName = termName("main")
   private val testSource = "(^|/)src/test/".r
@@ -506,7 +470,7 @@ object Symbols {
     env.symbolIsValid(sym) && !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isPrimaryConstructor(sym) &&
       !isMainWrapper(sym) && (!isDefaultGetter(sym) || isReportedDefaultGetter(sym)) && (sym match {
         case t: TermSymbol => !t.isModuleVal && !isIgnoredParam(t) && !Option(t.owner).exists(isDefaultGetter)
-        case c: ClassSymbol => !c.isRefinementClass
+        case c: ClassSymbol => !isRefinementClass(c)
         case t: TypeMemberSymbol => !Option(t.owner).exists(isRefinementClass)
         case _ => false
       })
