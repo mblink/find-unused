@@ -55,6 +55,10 @@ object Annotations {
       case _ => false
     }
 
+  // The compiler annotates a sealed class with each of its children, which doesn't make them used
+  private def isChild(a: Annotation)(using ctx: Context): Boolean =
+    Either.catchNonFatal(Symbols.name(a.symbol) == "scala.annotation.internal.Child").getOrElse(false)
+
   /**
    * Check the given Symbol for annotations that suppress unused warnings
    *
@@ -78,7 +82,7 @@ object Annotations {
     val allSyms = (Set(sym) ++ paramAccessorSyms ++ ctorParamSym ++ defaultParamSym).toList
     val hasUnusedAnnotation = allSyms.exists(_.annotations.exists(isUnusedAnnotation))
 
-    allSyms.foldMap(s => Trees.within(s)(s.annotations.foldMap(a => Trees.references(a.tree)))) |+| (
+    allSyms.foldMap(s => Trees.within(s)(s.annotations.filterNot(isChild).foldMap(a => Trees.references(a.tree)))) |+| (
       // If any relevant symbol has an unused annotation, consider them all used
       if (hasUnusedAnnotation) allSyms.foldMap(References.fromSymbol(_, References.root))
       else References.empty
