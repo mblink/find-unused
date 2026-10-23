@@ -53,3 +53,21 @@ The first argument is a comma-separated package list, as in `findUnusedPackages`
   its jars takes ~40 ms, so nearly all of the scan is reading and parsing class files.
 - The givens analysis itself took ~3–7 s on that application and ~4–5 s on the Scala 3 compiler (`dotty`,
   5,058 classes), depending on JIT warm-up.
+
+## Finding where the time goes
+
+Time the whole run first: run the assembled CLI (or `java -cp <cli3/Runtime/fullClasspath> bl.unused.FindUnusedCli all
+...`) on the project's classpath and timestamp its `[find-unused] ...` progress lines, which mark loading the classpath,
+starting the bytecode scan, each package's traversal and checking `inline given`s. Then profile the slow phase with Java
+Flight Recorder, using the `jfr` tool from the same JDK:
+
+```bash
+java -XX:StartFlightRecording=filename=run.jfr,settings=profile -cp "$cli_cp" bl.unused.FindUnusedCli all ...
+jfr print --events jdk.ExecutionSample --stack-depth 64 run.jfr > samples.txt
+python3 summarize_jfr.py samples.txt
+```
+
+A find-unused method with a large inclusive share is the place to look; one that searches a whole collection for each
+symbol shows up as most of the run on a large codebase. After a change, check that the findings are byte-for-byte the
+same (`cmp` the output files, in both modes), then compare the times over a couple of runs, since they vary by about a
+second.

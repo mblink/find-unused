@@ -8,7 +8,6 @@ import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
 import cats.syntax.traverse.*
 import scala.collection.mutable
-import scala.util.chaining.*
 import tastyquery.Contexts.Context
 import tastyquery.Symbols.*
 import tastyquery.Types.Type
@@ -19,13 +18,10 @@ object Sym {
   private val ids = mutable.Map.empty[Symbol, Int]
   def id(sym: Symbol): Int = ids.synchronized(ids.getOrElseUpdate(sym, ids.size))
 
-  private val cache = mutable.Map.empty[Symbol, Sym]
-
-  private def cached(sym: Symbol)(compute: => EnvR[Sym]): EnvR[Sym] =
-    cache.synchronized(cache.get(sym).fold(compute.map(s => cache.put(sym, s).pipe(_ => s)))(_.pure[EnvR]))
+  private val cache = Memo[Symbol, Sym]()
 
   def fromSymbol(sym: Symbol)(using ctx: Context): EnvR[Sym] =
-    cached(sym)(EnvR.noSeenSymbols(env => new Sym(
+    EnvR.fromEnv(env => cache(sym)(new Sym(
       id = id(sym),
       name = Symbols.displayName(sym),
       // A default value is reported at its parameter, rather than in the middle of its expression
@@ -34,11 +30,16 @@ object Sym {
     )))
 }
 
+/**
+ * What the traversal found. Each part of the traversal produces one of these with only the fields it knows about set,
+ * and `Refs.build` combines them, so a new field has to be added there too: with its default, it would compile and be
+ * dropped.
+ */
 case class References(
-  defined: Set[Sym],
-  used: Set[Sym],
+  defined: Set[Sym] = Set.empty,
+  used: Set[Sym] = Set.empty,
   // If the symbol represented by the map key is used, also mark the symbols represented by the map value as used
-  usedProxy: Map[Sym, Set[Sym]],
+  usedProxy: Map[Sym, Set[Sym]] = Map.empty,
   // The non-`transparent` inline methods the analyzed code calls, and the `inline given`s it defines -- see `InlineSummons`
   inlineCalls: Set[TermSymbol] = Set.empty,
   inlineGivens: Map[Sym, TermSymbol] = Map.empty,
@@ -141,9 +142,11 @@ case class References(
   final def excludingDefaultsOf(isExcluded: Sym => Boolean): Sym => Boolean =
     s => isExcluded(s) || defaultValueOf.get(s).exists(isExcluded)
 
+  // A definition and every definition around it
+  private def withOwners(s: Sym): List[Sym] = s :: owners.get(s).toList.flatMap(withOwners)
+
   final lazy val computeUnused: Set[Sym] = {
     // An entry point is used, and so is what it's in, e.g. the object a `main` method is in
-    def withOwners(s: Sym): List[Sym] = s :: owners.get(s).toList.flatMap(withOwners)
     val referenced = used ++ usedFrom.valuesIterator.flatten ++ externalOverrides ++ internalOverrides.keys ++ importRefs ++
       entryPoints.flatMap(withOwners)
     val allUsed = References.reachable(referenced)((s, _) => usedProxy.getOrElse(s, Set.empty))
@@ -229,120 +232,79 @@ object References {
   // The suffix of a local method lifted out of the method it's defined in
   private val liftedLocal = """\$\d+$""".r
 
-  given monoid: Monoid[References] =
-    Monoid.instance(
-      References(Set.empty, Set.empty, Map.empty),
-      (x, y) => References(
-        x.defined ++ y.defined,
-        x.used ++ y.used,
-        x.usedProxy |+| y.usedProxy,
-        x.inlineCalls ++ y.inlineCalls,
-        x.inlineGivens ++ y.inlineGivens,
-        x.inlineTypeArgs ++ y.inlineTypeArgs,
-        x.usedFrom |+| y.usedFrom,
-        x.owners ++ y.owners,
-        x.ownerIndependent ++ y.ownerIndependent,
-        x.entryPoints ++ y.entryPoints,
-        x.externalOverrides ++ y.externalOverrides,
-        x.internalOverrides |+| y.internalOverrides,
-        x.defaultValueOf ++ y.defaultValueOf,
-        x.importRefs ++ y.importRefs,
-        x.bytecodeCallers |+| y.bytecodeCallers,
-        x.jvmMembers |+| y.jvmMembers,
-        x.jvmClasses ++ y.jvmClasses,
-      ),
-    )
+  lazy val empty: EnvR[Refs] = Refs.monoid.empty.pure[EnvR]
 
-  lazy val empty: EnvR[References] = monoid.empty.pure[EnvR]
+  def leaf(refs: References): EnvR[Refs] = Refs(refs).pure[EnvR]
 
   // A definition, if it's one the analysis reports on (`Symbols.isDefinition`)
-  val defined = (sym: Symbol) => (ctx: Context) ?=>
+  def defined(sym: Symbol)(using ctx: Context): EnvR[Refs] =
     EnvR.env.flatMap(env =>
       if (!Symbols.isDefinition(env, sym)) empty
       else (for {
         defSym <- Sym.fromSymbol(sym)
         // An overriding symbol is used whenever a symbol it overrides is, since it can be called through a parent type,
         // and always if it overrides something outside the analyzed code
-        overrides <- (sym match {
+        bases = (sym match {
           // An `object` overrides what its module val does, e.g. an abstract `val` it implements
           case c: ClassSymbol if c.isModuleClass => c.moduleValue.getOrElse(c)
           case s => s
         }) match {
-          case t: TermOrTypeSymbol =>
-            Symbols.allOverriddenSymbols(t) match {
-              case Nil => empty
-              case bases if bases.forall(Symbols.isDefinition(env, _)) =>
-                bases.traverse(Sym.fromSymbol).map(bs => monoid.empty.copy(internalOverrides = Map(defSym -> bs.toSet)))
-              case _ => monoid.empty.copy(externalOverrides = Set(defSym)).pure[EnvR]
-            }
-          case _ => empty
+          case t: TermOrTypeSymbol => Symbols.allOverriddenSymbols(t)
+          case _ => Nil
         }
+        internalBases <-
+          if (bases.forall(Symbols.isDefinition(env, _))) bases.traverse(Sym.fromSymbol)
+          else List.empty[Sym].pure[EnvR]
+        // The innermost enclosing definition, which for a member of an anonymous class is the method that creates it
+        owner <- env.enclosing.headOption.traverse(Sym.fromSymbol)
+        defaultOf <- Symbols.defaultGetterParam(sym).traverse((m, _) => Sym.fromSymbol(m))
         // If a symbol is referenced in bytecode, consider it used
         // This accounts for `given`s summoned by inline methods and macros, and default values read by macros, which
         // TASTy doesn't record
         callers = env.bytecodeCallers(sym)
-        usedInBytecode =
-          if (callers.nonEmpty) {
-            if (env.debug) println(s"*********** used in bytecode: ${Symbols.name(sym)}")
-            monoid.empty.copy(bytecodeCallers = Map(defSym -> callers))
-          } else monoid.empty
-        jvmNames = sym match {
-          case c: ClassSymbol => monoid.empty.copy(jvmClasses = Bytecode.internalClassName(c).map(_ -> defSym).toMap)
-          case t: TermSymbol => monoid.empty.copy(jvmMembers = Bytecode.memberKey(t).map(_ -> Set(defSym)).toMap)
-          case _ => monoid.empty
-        }
-        // The innermost enclosing definition, which for a member of an anonymous class is the method that creates it
-        owners <- env.enclosing.headOption
-          .fold(Map.empty[Sym, Sym].pure[EnvR])(o => Sym.fromSymbol(o).map(os => Map(defSym -> os)))
+        _ = if (env.debug && callers.nonEmpty) println(s"*********** used in bytecode: ${Symbols.name(sym)}")
+      } yield Refs(References(
+        defined = Set(defSym),
+        externalOverrides = Option.when(bases.nonEmpty && internalBases.isEmpty)(defSym).toSet,
+        internalOverrides = Option.when(internalBases.nonEmpty)(defSym -> internalBases.toSet).toMap,
+        bytecodeCallers = Option.when(callers.nonEmpty)(defSym -> callers).toMap,
+        jvmMembers = Some(sym).collect { case t: TermSymbol => t }.flatMap(Bytecode.memberKey).map(_ -> Set(defSym)).toMap,
+        jvmClasses = Some(sym).collect { case c: ClassSymbol => c }.flatMap(Bytecode.internalClassName).map(_ -> defSym).toMap,
+        owners = owner.map(defSym -> _).toMap,
         // A parameter's owner is its method, even a constructor's, whose class is the parameter's enclosing definition
-        ownerIndependent =
-          if ((env.enclosing.headOption ++ Option(sym.owner)).exists { case m: TermSymbol => m.isMethod; case _ => false } ||
-            Some(sym).collect { case t: TermSymbol => t.isParamAccessor }.getOrElse(false)) Set(defSym)
-          else Set.empty[Sym]
-        inlineGivens = sym match {
-          case t: TermSymbol if t.isInline && Symbols.isGiven(t) => Map(defSym -> t)
-          case _ => Map.empty
-        }
-        defaultValueOf <- Symbols.defaultGetterParam(sym)
-          .fold(Map.empty[Sym, Sym].pure[EnvR])((m, _) => Sym.fromSymbol(m).map(ms => Map(defSym -> ms)))
-        entryPoints = if (Symbols.isEntryPoint(sym)) Set(defSym) else Set.empty[Sym]
-        refs = References(
-          Set(defSym),
-          Set.empty,
-          Map.empty,
-          inlineGivens = inlineGivens,
-          owners = owners,
-          ownerIndependent = ownerIndependent,
-          entryPoints = entryPoints,
-          defaultValueOf = defaultValueOf,
-        )
-      } yield refs |+| overrides |+| usedInBytecode |+| jvmNames) |+| Annotations.checkForUnused(sym)
+        ownerIndependent = Option.when(
+          (env.enclosing.headOption ++ Option(sym.owner)).exists { case m: TermSymbol => m.isMethod; case _ => false } ||
+            Some(sym).collect { case t: TermSymbol => t.isParamAccessor }.getOrElse(false)
+        )(defSym).toSet,
+        inlineGivens = Some(sym).collect { case t: TermSymbol if t.isInline && Symbols.isGiven(t) => defSym -> t }.toMap,
+        defaultValueOf = defaultOf.map(defSym -> _).toMap,
+        entryPoints = Option.when(Symbols.isEntryPoint(sym))(defSym).toSet,
+      ))) |+| Annotations.checkForUnused(sym)
     )
 
   // A reference made by code, attributed to the innermost enclosing definition, if any
-  val used = (sym: Symbol) => (ctx: Context) ?=>
+  def used(sym: Symbol)(using ctx: Context): EnvR[Refs] =
     EnvR.env.flatMap(env =>
       env.enclosing.headOption.fold(root(sym))(src =>
-        Sym.fromSymbol(src).flatMap(s => Sym.fromSymbol(sym).map(t => monoid.empty.copy(usedFrom = Map(s -> Set(t)))))
+        (Sym.fromSymbol(src), Sym.fromSymbol(sym)).mapN((s, t) => Refs(References(usedFrom = Map(s -> Set(t)))))
       )
     )
 
   // A symbol that's used no matter what references it
-  val root = (sym: Symbol) => (ctx: Context) ?=>
-    Sym.fromSymbol(sym).map(s => References(Set.empty, Set(s), Map.empty))
+  def root(sym: Symbol)(using ctx: Context): EnvR[Refs] =
+    Sym.fromSymbol(sym).map(s => Refs(References(used = Set(s))))
 
-  def inlineCalls(syms: Set[Symbol]): EnvR[References] =
-    monoid.empty.copy(inlineCalls = syms.collect { case t: TermSymbol if t.isInline && !t.isTransparentInline => t }).pure[EnvR]
+  def inlineCalls(syms: Set[Symbol]): EnvR[Refs] =
+    leaf(References(inlineCalls = syms.collect { case t: TermSymbol if t.isInline && !t.isTransparentInline => t }))
 
-  def usedProxy(m: Map[Symbol, Set[Symbol]])(using ctx: Context): EnvR[References] = empty.flatMap(_.addUsedProxy(m))
-  def usedProxy(ifUsed: Symbol, thenUsed: Set[Symbol])(using ctx: Context): EnvR[References] =
-    empty.flatMap(_.addUsedProxy(ifUsed, thenUsed))
+  def usedProxy(m: Map[Symbol, Set[Symbol]])(using ctx: Context): EnvR[Refs] = References().addUsedProxy(m).map(Refs(_))
+  def usedProxy(ifUsed: Symbol, thenUsed: Set[Symbol])(using ctx: Context): EnvR[Refs] = usedProxy(Map(ifUsed -> thenUsed))
 
   def fromSymbol(
     sym: Symbol,
-    mk: Symbol => Context ?=> EnvR[References],
+    mk: Symbol => EnvR[Refs],
     skipExportCheck: Boolean = false,
-  )(using ctx: Context): EnvR[References] =
+  )(using ctx: Context): EnvR[Refs] =
     EnvR.env.flatMap { env =>
       (if (env.symbolIsValid(sym))
         sym match {
@@ -384,4 +346,89 @@ object References {
         case _ => empty
       })
     }
+}
+
+/**
+ * `References` in the making. The traversal combines a result for every tree and symbol it visits, so combining two of
+ * these only builds a tree, which `build` flattens into `References` once, instead of merging every field each time.
+ */
+sealed trait Refs
+
+object Refs {
+  private case object Empty extends Refs
+  private final case class Leaf(refs: References) extends Refs
+  private final case class Concat(left: Refs, right: Refs) extends Refs
+
+  def apply(refs: References): Refs = Leaf(refs)
+
+  given monoid: Monoid[Refs] =
+    Monoid.instance(Empty, (x, y) => if (x eq Empty) y else if (y eq Empty) x else Concat(x, y))
+
+  // Adds each value set to the one already under its key, like combining the maps with `|+|`
+  private def addAll[K, V](acc: mutable.Map[K, Set[V]], m: Map[K, Set[V]]): Unit =
+    m.foreach((k, vs) => acc.updateWith(k)(o => Some(o.fold(vs)(_ ++ vs)))): Unit
+
+  extension (r: Refs) {
+    /**
+     * The `References` this combines: sets are unioned, the sets in maps of sets are unioned per key, and in other maps a
+     * later value replaces an earlier one under the same key
+     */
+    def build: References = {
+      val defined, used, ownerIndependent, entryPoints, externalOverrides, importRefs = mutable.Set.empty[Sym]
+      val inlineCalls = mutable.Set.empty[TermSymbol]
+      val inlineTypeArgs = mutable.Set.empty[Type]
+      val usedProxy, usedFrom, internalOverrides = mutable.Map.empty[Sym, Set[Sym]]
+      val bytecodeCallers = mutable.Map.empty[Sym, Set[Bytecode.Caller]]
+      val jvmMembers = mutable.Map.empty[(String, String), Set[Sym]]
+      val inlineGivens = mutable.Map.empty[Sym, TermSymbol]
+      val owners, defaultValueOf = mutable.Map.empty[Sym, Sym]
+      val jvmClasses = mutable.Map.empty[String, Sym]
+
+      // Left to right, so a later value replaces an earlier one under the same key
+      val todo = mutable.Stack[Refs](r)
+      while (todo.nonEmpty)
+        todo.pop() match {
+          case Empty => ()
+          case Concat(left, right) => todo.push(right).push(left): Unit
+          case Leaf(x) =>
+            defined ++= x.defined
+            used ++= x.used
+            addAll(usedProxy, x.usedProxy)
+            inlineCalls ++= x.inlineCalls
+            inlineGivens ++= x.inlineGivens
+            inlineTypeArgs ++= x.inlineTypeArgs
+            addAll(usedFrom, x.usedFrom)
+            owners ++= x.owners
+            ownerIndependent ++= x.ownerIndependent
+            entryPoints ++= x.entryPoints
+            externalOverrides ++= x.externalOverrides
+            addAll(internalOverrides, x.internalOverrides)
+            defaultValueOf ++= x.defaultValueOf
+            importRefs ++= x.importRefs
+            addAll(bytecodeCallers, x.bytecodeCallers)
+            addAll(jvmMembers, x.jvmMembers)
+            jvmClasses ++= x.jvmClasses
+        }
+
+      References(
+        defined.toSet,
+        used.toSet,
+        usedProxy.toMap,
+        inlineCalls.toSet,
+        inlineGivens.toMap,
+        inlineTypeArgs.toSet,
+        usedFrom.toMap,
+        owners.toMap,
+        ownerIndependent.toSet,
+        entryPoints.toSet,
+        externalOverrides.toSet,
+        internalOverrides.toMap,
+        defaultValueOf.toMap,
+        importRefs.toSet,
+        bytecodeCallers.toMap,
+        jvmMembers.toMap,
+        jvmClasses.toMap,
+      )
+    }
+  }
 }

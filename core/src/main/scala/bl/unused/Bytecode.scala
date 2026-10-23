@@ -242,6 +242,7 @@ object Bytecode {
     ).toOption
 
   // At most 3 threads, and at most half of the processors, so the rest of the machine stays responsive while this runs
+  // alongside the analysis's own thread
   // Going from 1 to 3 threads makes the scan ~30% faster, but more threads than that only save a few more milliseconds
   def defaultThreads: Int = math.max(1, math.min(3, Runtime.getRuntime.availableProcessors / 2))
 

@@ -93,10 +93,10 @@ object Types {
     go(Set.empty, Set.empty, List(tpe))
   }
 
-  def references(tpe: Type)(using ctx: Context): EnvR[References] =
+  def references(tpe: Type)(using ctx: Context): EnvR[Refs] =
     symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
 
-  def prefixReferences(prefix: NonEmptyPrefix)(using ctx: Context): EnvR[References] =
+  def prefixReferences(prefix: NonEmptyPrefix)(using ctx: Context): EnvR[Refs] =
     prefix match {
       case t: Type => references(t)
       case _: PackageRef => References.empty
