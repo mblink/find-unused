@@ -107,6 +107,9 @@ You may wish to exclude some code from being reported as unused. The tool suppor
 |`src`|Exclude all code in files that match the given regex|
 |`sym`|Exclude all code whose symbols match the given regex|
 
+Code that's only used by reflection needs one: `classOf[Foo.type]` counts as a use of `object Foo`, but looking it up
+by name with `Class.forName("Foo$")` doesn't.
+
 ### Usage in sbt plugin
 
 You can define exclusions using the `findUnusedExclusions` setting:
@@ -201,6 +204,9 @@ case class Bar(foo: Foo) derives Decoder
 ```
 
 `Foo`'s derived `Decoder` is used by `Bar`'s derived `Decoder`, which is only visible in the bytecode.
+
+The same goes for `object`s that macros refer to, like the `case object`s that
+[enumeratum](https://github.com/lloydmeta/enumeratum)'s `findValues` lists.
 
 A `given` declared inside a method body compiles to a local variable, which the bytecode can't tell apart from any
 other, so one that's only summoned by an `inline` method or macro is still reported as unused.

@@ -1,7 +1,9 @@
-Found 2 unused explicits
+Found 3 unused explicits
 
 ┌───────────────────────┬─────────────────────────────────────────────┐
 │ Instance              │ Location                                    │
+├───────────────────────┼─────────────────────────────────────────────┤
+│ bl.unused.Defs.Nested │ a/src/main/scala/bl/unused/Defs.scala:18:10 │
 ├───────────────────────┼─────────────────────────────────────────────┤
 │ bl.unused.Defs.unused │ a/src/main/scala/bl/unused/Defs.scala:22:26 │
 ├───────────────────────┼─────────────────────────────────────────────┤

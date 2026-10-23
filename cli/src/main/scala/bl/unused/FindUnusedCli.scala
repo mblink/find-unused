@@ -115,7 +115,7 @@ object FindUnusedCli {
 
       val isExcluded = refs.excludingDefaultsOf(sym => args.exclusion.exists(_.matches(sym)))
       val unused =
-        (if (args.transitive.value) refs.computeTransitivelyUnused(isExcluded) else refs.computeUnused.filterNot(isExcluded))
+        (if (args.transitive.value) refs.computeTransitivelyUnused(isExcluded) else refs.computeUnusedExcluding(isExcluded))
           .toList
         .sortBy {
           case Sym(_, name, Some(SourcePos(file, line, col))) => (file, line, col, name)
