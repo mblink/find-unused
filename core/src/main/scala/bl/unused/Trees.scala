@@ -7,6 +7,7 @@ import cats.syntax.semigroup.*
 import scala.collection.mutable
 import tastyquery.Contexts.*
 import tastyquery.Names.{termName, SignedName, TermName}
+import tastyquery.SourcePosition
 import tastyquery.Symbols.*
 import tastyquery.Traversers.TreeTraverser
 import tastyquery.Trees.*
@@ -150,15 +151,22 @@ object Trees {
 
   private val transparentInlineDefsCache = Memo[ClassSymbol, List[TermSymbol]]()
 
-  // The `transparent inline` methods declared in a class and in the classes and objects nested in it
-  private def transparentInlineDefs(cls: ClassSymbol)(using ctx: Context): List[TermSymbol] =
-    transparentInlineDefsCache(cls)(
-      cls.declarations.flatMap {
-        case t: TermSymbol if t.isTransparentInline => List(t)
-        case c: ClassSymbol => transparentInlineDefs(c)
-        case _ => Nil
-      }
-    )
+  // The `transparent inline` methods defined anywhere in a class's tree, including in the classes, objects and methods
+  // in it. Without a tree, neither they nor their trees can be found.
+  private def transparentInlineDefs(cls: ClassSymbol): List[TermSymbol] =
+    transparentInlineDefsCache(cls) {
+      val defs = mutable.ListBuffer.empty[TermSymbol]
+      cls.tree.foreach(new TreeTraverser {
+        override def traverse(tree: Tree): Unit = {
+          tree match {
+            case d: DefDef if d.symbol.isTransparentInline => defs += d.symbol
+            case _ => ()
+          }
+          super.traverse(tree)
+        }
+      }.traverse(_))
+      defs.toList
+    }
 
   private val definitionSpansCache = Memo[TermSymbol, Set[(Int, Int)]]()
 
@@ -175,6 +183,53 @@ object Trees {
       spans.toSet
     }
 
+  private val rootCallsCache = Memo[TermSymbol, List[TermSymbol]]()
+
+  // The `transparent inline` methods that a method's body is a call to, like `foo` for `def bar() = foo(41)`
+  private def rootCalls(m: TermSymbol)(using ctx: Context): List[TermSymbol] =
+    rootCallsCache(m) {
+      @annotation.tailrec
+      def callee(tree: Tree): Set[Symbol] =
+        tree match {
+          case Typed(expr, _) => callee(expr)
+          case Block(Nil, expr) => callee(expr)
+          case Apply(fun, _) => callee(fun)
+          case TypeApply(fun, _) => callee(fun)
+          case _ => Symbols.fromTree(tree)
+        }
+
+      m.tree.collect { case d: DefDef => d.rhs }.flatten.toList
+        .flatMap(callee)
+        .collect { case t: TermSymbol if t.isTransparentInline && t != m => t }
+    }
+
+  /**
+   * The methods on a chain of `transparent inline` methods whose bodies are calls to the next one, starting from `m`,
+   * that ends with one with a tree at `pos`, not counting `m`. When the last one reduces to a constant, the expansion
+   * of a call to `m` is just that constant, positioned in the last one's definition.
+   */
+  private def constantChain(m: TermSymbol, pos: SourcePosition)(using ctx: Context): List[TermSymbol] = {
+    // Only the offsets, since the source file recorded for the constant is the outermost method's
+    def matches(t: TermSymbol): Boolean = definitionSpans(t).contains((pos.startOffset, pos.endOffset))
+
+    def go(t: TermSymbol, seen: Set[TermSymbol]): Option[List[TermSymbol]] =
+      if (matches(t)) Some(List(t))
+      else rootCalls(t).iterator.filterNot(seen.contains).flatMap(n => go(n, seen + n).map(t :: _)).nextOption()
+
+    rootCalls(m).iterator.flatMap(n => go(n, Set(m, n))).nextOption().getOrElse(Nil)
+  }
+
+  // Calling a method takes an instance of its class, and of the classes around that, or a reference to the `object`s
+  private def enclosingClasses(m: TermSymbol): List[ClassSymbol] = {
+    @annotation.tailrec
+    def go(acc: List[ClassSymbol], s: Symbol): List[ClassSymbol] =
+      Option(s.owner) match {
+        case Some(c: ClassSymbol) => go(c :: acc, c)
+        case _ => acc
+      }
+    go(Nil, m)
+  }
+
   /**
    * If this `Inlined` tree is the expansion of a `transparent inline` method, we consider the method used.
    *
@@ -185,20 +240,36 @@ object Trees {
    * like inline arguments, is nested in `Inlined` trees with no `caller`, so it doesn't interfere.
    *
    * Only the position's offsets are used, since the source file recorded for a macro expansion is the call site's. They
-   * have to match exactly, because the root of a nested `transparent inline` call that reduces to a constant can keep
-   * the position of a tree in another file.
+   * have to match exactly, because the root of a nested `transparent inline` call that reduces to a constant keeps the
+   * position of a tree in the inner method's definition, which can be in another file. So when the root is a constant,
+   * the methods in the class whose bodies are calls that lead to a method with a tree there are considered used too.
+   *
+   * The classes and `object`s the method is in are considered used too, since the expansion doesn't have to refer to
+   * the instance or `object` it was called on.
    */
   private def transparentInlineReferences(expr: TermTree, caller: TypeTree)(using ctx: Context): EnvR[References] =
     EnvR.env.flatMap { env =>
       val pos = expr.pos
-      Some(caller.toType)
+      val defs = Some(caller.toType)
         .collect { case t: TypeRef => t.optSymbol }
         .flatten
         .collect { case c: ClassSymbol if !pos.isUnknown && env.isInPackages(c) => c }
         .toList
         .flatMap(transparentInlineDefs)
-        .filter(definitionSpans(_).contains((pos.startOffset, pos.endOffset)))
-        .foldMap(References.fromSymbol(_, References.used))
+      val direct = defs.filter(definitionSpans(_).contains((pos.startOffset, pos.endOffset)))
+      val viaConstant = expr match {
+        case _: Literal =>
+          defs.flatMap(d => constantChain(d, pos) match {
+            case Nil => Nil
+            case chain => d :: chain
+          })
+        case _ => Nil
+      }
+      // An expansion inside one of those classes doesn't make it used
+      (direct ++ viaConstant).distinct.foldMap(m =>
+        References.fromSymbol(m, References.used) |+|
+          enclosingClasses(m).filterNot(env.enclosing.contains).foldMap(References.fromSymbol(_, References.used))
+      )
     }
 
   // The type arguments of a call to a non-`transparent` inline method, which can pass them on to an implicit search
