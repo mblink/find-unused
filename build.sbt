@@ -56,6 +56,7 @@ ThisBuild / githubWorkflowBuildMatrixExclusions ++= scriptedScalaVersions.filter
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Run(List("sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} 'test; scripted'"), name = Some("scripted")),
+  WorkflowStep.Run(List("python3 .claude/skills/validate-on-project/test_scripts.py"), name = Some("Check skill scripts")),
   WorkflowStep.Run(
     List("sbt cli3/assembly"),
     name = Some("Build CLI"),
@@ -170,6 +171,28 @@ lazy val cli = baseProj("cli", "find-unused-cli")
   })
   .dependsOn(core)
   .aggregate(core)
+
+// The scripts the skills run with scala-cli, compiled here so a change to `core` that breaks them fails the build
+lazy val skills = sbt.internal.ProjectMatrix("skills", file(".claude/skills"))
+  .jvmPlatform(scalaVersions = Seq(scala3ForLib))
+  .settings(commonSettings)
+  .settings(
+    name := "find-unused-skills",
+    libraryDependencies += "org.ow2.asm" % "asm-util" % "9.11.1",
+    Compile / unmanagedSourceDirectories := Seq(),
+    Compile / unmanagedSources := Seq(
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "benchmark" / "Bench.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "CompareBytecode.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "ExclusionsPrelude.scala",
+    ),
+    // `ExclusionsPrelude.scala` expects the exclusions copied from a project's build
+    Compile / sourceGenerators += Def.task {
+      val file = (Compile / sourceManaged).value / "Exclusions.scala"
+      IO.write(file, "val exclusions: Seq[FindUnusedExclusion] = Seq(FindUnusedExclusion(sym = \"^x$\".r))\n")
+      Seq(file)
+    },
+  )
+  .dependsOn(core)
 
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
 
