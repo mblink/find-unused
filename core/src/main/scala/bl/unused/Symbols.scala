@@ -258,6 +258,14 @@ object Symbols {
       ).flatMap(f => Either.catchNonFatal(f(sel)).toOption.getOrElse(Set.empty))
     )
 
+  /** The symbols an `Ident` or `Select` refers to, or none for another tree or one that can't be resolved */
+  def fromTree(tree: Tree)(using ctx: Context): Set[Symbol] =
+    Either.catchNonFatal(tree match {
+      case i: Ident => getFromIdent(i)
+      case s: Select => getFromSelect(s)
+      case _ => Set.empty
+    }).getOrElse(Set.empty)
+
   /**
    * Get the first symbol the given `TermOrTypeSymbol` overrides, if any
    *

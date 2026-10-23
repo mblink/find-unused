@@ -23,12 +23,12 @@ import tastyquery.Symbols.*
  * @param supertypes internal class names to the internal names of their direct superclass and interfaces
  */
 case class BytecodeReferences(references: Map[String, Set[String]], supertypes: Map[String, List[String]]) {
-  private val ancestorsCache = mutable.Map.empty[String, Set[String]]
+  private val ancestorsCache = Memo[String, Set[String]]()
 
   // The JVM names the static type of the receiver as the owner of a member reference, not the class that declares it,
   // so a reference to an inherited member can be on any subclass of the declaring class
   private def ancestors(cls: String): Set[String] =
-    ancestorsCache.synchronized(ancestorsCache.getOrElseUpdate(cls, {
+    ancestorsCache(cls) {
       @annotation.tailrec
       def go(acc: Set[String], todo: List[String]): Set[String] =
         todo match {
@@ -38,7 +38,7 @@ case class BytecodeReferences(references: Map[String, Set[String]], supertypes: 
         }
 
       go(Set.empty, List(cls))
-    }))
+    }
 
   def isReferenced(sym: Symbol): Boolean =
     Bytecode.memberKey(sym).exists { (owner, name) =>

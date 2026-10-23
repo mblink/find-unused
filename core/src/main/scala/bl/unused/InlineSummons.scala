@@ -41,24 +41,27 @@ object InlineSummons {
       case _ => false
     }
 
-  /** The classes a type mentions, including through a type alias it's an application of */
-  def classes(tpe: Type)(using ctx: Context): Set[ClassSymbol] =
+  // Every class extends these, so finding one of them, e.g. in `TypeRepr.of[Any]`, says nothing about a search
+  private def universalClasses(using ctx: Context): Set[ClassSymbol] =
+    Set(ctx.defn.AnyClass, ctx.defn.MatchableClass, ctx.defn.ObjectClass, ctx.defn.ProductClass) ++
+      List("java.io.Serializable", "scala.Equals").flatMap(n => Either.catchNonFatal(ctx.findTopLevelClass(n)).toOption)
+
+  // The classes a type mentions, including through a type alias it's an application of
+  private def classesOf(tpe: Type)(using ctx: Context): Set[ClassSymbol] =
     Either.catchNonFatal((Types.symbols(tpe) ++ Types.symbols(tpe.dealias)).collect { case c: ClassSymbol => c })
       .getOrElse(Set.empty)
 
-  private def symbolOf(tree: Tree)(using ctx: Context): Set[Symbol] =
-    tree match {
-      case i: Ident => Either.catchNonFatal(Symbols.getFromIdent(i)).getOrElse(Set.empty)
-      case s: Select => Either.catchNonFatal(Symbols.getFromSelect(s)).getOrElse(Set.empty)
-      case _ => Set.empty
-    }
+  /** The classes `types` mention, including through type aliases they're applications of, other than universal ones */
+  def classes(types: Iterable[Type])(using ctx: Context): Set[ClassSymbol] =
+    types.iterator.flatMap(classesOf).toSet -- universalClasses
 
   private def isQuotedRuntime(fun: Tree, method: String)(using ctx: Context): Boolean =
-    symbolOf(fun).exists(s => Symbols.name(s) == s"scala.quoted.runtime.Expr.$method")
+    Symbols.fromTree(fun).exists(s => Symbols.name(s) == s"scala.quoted.runtime.Expr.$method")
 
   /**
    * @param roots the inline methods called by the analyzed code
-   * @return `None` when there are too many methods to walk, in which case any class might be summoned
+   * @return the classes they might summon, other than universal ones, or `None` when there are too many methods to walk,
+   *         in which case any class might be summoned
    */
   def summonedClasses(roots: Set[TermSymbol])(using ctx: Context): Option[Set[ClassSymbol]] = {
     val found = mutable.Set.empty[ClassSymbol]
@@ -80,7 +83,7 @@ object InlineSummons {
       new TreeTraverser {
         override def traverse(tree: Tree): Unit = {
           tree match {
-            case t: TypeTree => Either.catchNonFatal(t.toType).foreach(found ++= classes(_))
+            case t: TypeTree => Either.catchNonFatal(t.toType).foreach(found ++= classesOf(_))
             case _ => ()
           }
           super.traverse(tree)
@@ -102,7 +105,7 @@ object InlineSummons {
           tree match {
             // `summonInline[T]`, `summonAll[T]`, `Expr.summon[T]`, `Type.of[T]`, etc., and inline methods, which can
             // pass their type arguments on to those
-            case TypeApply(fun, args) if symbolOf(fun).exists(s => isCompiletimeOrQuoted(s) || isInlineMethod(s)) =>
+            case TypeApply(fun, args) if Symbols.fromTree(fun).exists(s => isCompiletimeOrQuoted(s) || isInlineMethod(s)) =>
               args.foreach(addTypes)
               super.traverse(tree)
 
@@ -124,7 +127,7 @@ object InlineSummons {
               withMacroCode(false)(traverse(body))
 
             case _: (Ident | Select) =>
-              symbolOf(tree).foreach {
+              Symbols.fromTree(tree).foreach {
                 case t: TermSymbol if t.isInline => enqueue(t, macroCode)
                 case t: TermSymbol if macroCode && t.isMethod && !isPlatform(t) => enqueue(t, true)
                 case _ => ()
@@ -147,7 +150,7 @@ object InlineSummons {
       }).leftMap(e => println(s"[find-unused] Failed to read the body of ${Symbols.name(sym)}: ${e.getMessage}")): Unit
     }
 
-    Option.unless(truncated)(found.toSet)
+    Option.unless(truncated)(found.toSet -- universalClasses)
   }
 
   private def resultType(tpe: TypeOrMethodic): TypeOrMethodic =
@@ -157,21 +160,11 @@ object InlineSummons {
       case t => t
     }
 
-  // Every class extends these, so finding one of them, e.g. in `TypeRepr.of[Any]`, says nothing about a search
-  def universalClasses(using ctx: Context): Set[ClassSymbol] =
-    Set(ctx.defn.AnyClass, ctx.defn.MatchableClass, ctx.defn.ObjectClass, ctx.defn.ProductClass) ++
-      List("java.io.Serializable", "scala.Equals").flatMap(n => Either.catchNonFatal(ctx.findTopLevelClass(n)).toOption)
-
-  /**
-   * Whether an implicit search for one of `summoned` might find the given `inline given`
-   *
-   * @param universal `universalClasses`, which don't count
-   */
-  def mightFind(summoned: Set[ClassSymbol], universal: Set[ClassSymbol], inlineGiven: TermSymbol)(using ctx: Context): Boolean = {
+  /** Whether a search for one of the `summoned` classes, from `classes` or `summonedClasses`, might find `inlineGiven` */
+  def mightFind(summoned: Set[ClassSymbol], inlineGiven: TermSymbol)(using ctx: Context): Boolean =
     // A search for `Decoder[A]` can find a given of a subclass, like `ConfiguredDecoder[A]`
     Either.catchNonFatal(resultType(inlineGiven.declaredType) match {
       case t: Type => t.dealias.instanceClass.toList.flatMap(c => Either.catchNonFatal(c.linearization).getOrElse(List(c)))
       case _ => Nil
-    }).getOrElse(Nil).exists(c => !universal.contains(c) && summoned.contains(c))
-  }
+    }).getOrElse(Nil).exists(summoned.contains)
 }
