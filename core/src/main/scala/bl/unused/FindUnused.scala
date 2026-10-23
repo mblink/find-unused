@@ -6,7 +6,7 @@ import java.nio.file.{Files, FileSystems, Path}
 import scala.jdk.CollectionConverters.*
 import tastyquery.Contexts.Context
 import tastyquery.jdk.ClasspathLoaders
-import tastyquery.Symbols.Symbol
+import tastyquery.Symbols.{ClassSymbol, Symbol, TermSymbol}
 
 object FindUnused {
   class Runner(symbolIsValid: Symbol => Boolean) {
@@ -36,12 +36,37 @@ object FindUnused {
         sym => Symbols.isGiven(sym) && bytecodeRefs.isReferenced(sym),
       )
 
-      packages.foldMap { p =>
+      val refs = packages.foldMap { p =>
         println(s"[find-unused] Analyzing package $p")
         Symbols.references(ctx.findPackage(p)).run(env, SeenSymbols.empty)._2
       }
+      markPossiblySummonedInlineGivens(refs, debug)
     }
   }
+
+  /** Consider `inline given`s used if an implicit search after TASTy is pickled might find them, see `InlineSummons` */
+  def markPossiblySummonedInlineGivens(refs: References, debug: Boolean)(using ctx: Context): References =
+    if (refs.inlineGivens.isEmpty) refs
+    else {
+      println("[find-unused] Checking inline givens")
+      // An `inline given` that might be found can summon more when it's expanded, so keep walking the bodies of the
+      // ones found until no more are
+      @annotation.tailrec
+      def go(roots: Set[TermSymbol], summoned: Set[ClassSymbol], found: Map[Sym, TermSymbol]): Map[Sym, TermSymbol] =
+        InlineSummons.summonedClasses(roots) match {
+          case None =>
+            println("[find-unused] Too many inline methods to check which type classes they summon, so every inline given is considered used")
+            refs.inlineGivens
+          case Some(classes) =>
+            val all = summoned ++ classes
+            val more = refs.inlineGivens.filter((s, g) => !found.contains(s) && InlineSummons.mightFind(all, g))
+            if (more.isEmpty) found else go(more.values.toSet, all, found ++ more)
+        }
+
+      val possiblyUsed = go(refs.inlineCalls, InlineSummons.classes(refs.inlineTypeArgs), Map.empty).keySet
+      if (debug) possiblyUsed.foreach(s => println(s"*********** possibly summoned after pickling: ${s.name}"))
+      refs.copy(used = refs.used ++ possiblyUsed)
+    }
 
   object explicits extends Runner(s => !Symbols.isGiven(s))
   object givens extends Runner(Symbols.isGiven)

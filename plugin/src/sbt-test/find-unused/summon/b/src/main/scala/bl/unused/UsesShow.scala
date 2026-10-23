@@ -10,4 +10,5 @@ object UsesShow {
   val viaQuotedSummonInline = Summoners.withQuotedSummonInline
   val viaTrait = Summoners.withSummonInline[Short]
   val viaTopLevel = Summoners.withSummonInline[Unit]
+  val inlineViaSummonInline = Summoners.withSummonInline[Long]
 }
