@@ -23,7 +23,7 @@ See below for more details on setup and use.
 - [Transitive mode](#transitive-mode)
 - [Known issues](#known-issues)
   - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
-  - [Nested `transparent inline` calls that reduce to a constant](#nested-transparent-inline-calls-that-reduce-to-a-constant)
+  - [`transparent inline` methods that reduce to a constant](#transparent-inline-methods-that-reduce-to-a-constant)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
 - [Debugging](#debugging)
 
@@ -232,7 +232,7 @@ val foos = sorted(List(Foo(2), Foo(1)))
 The walk can't follow a macro's call to an abstract method into its implementations, so a type class that's only
 summoned there isn't seen, and its `inline given`s can be reported even when they're used.
 
-### Nested `transparent inline` calls that reduce to a constant
+### `transparent inline` methods that reduce to a constant
 
 As of Scala 3.10.0, the TASTy representation of a call to a `transparent inline` method is the method's expanded body --
 there is no reference to the method itself. For example, the TASTy for `val bar` here is simply `val bar = 1`:
@@ -243,19 +243,24 @@ val bar = foo()
 ```
 
 To work around this, find-unused uses the source positions recorded in the expansion, which point to a tree in the
-definition of the `transparent inline` method it came from (or, for a macro, to its `${ ... }` splice). Since Scala
-3.10.0, this doesn't work when a `transparent inline` method's body is a call to another `transparent inline` method
-that reduces to a constant, because the constant keeps the position of the inner method's body. In this example, `foo`
-is considered used, but `bar` is reported as unused:
+definition of the `transparent inline` method it came from (or, for a macro, to its `${ ... }` splice). It also
+considers the classes and objects the method is in used, since the expansion doesn't have to refer to what the method
+was called on, unless the expansion is inside them.
+
+When a `transparent inline` method's body is a call to another one that reduces to a constant, the constant is
+positioned in the other one's definition, so the expansion of a call to `bar` here only points to `foo`:
 
 ```scala
 transparent inline def foo(x: Int): Int = x + 1
 transparent inline def bar(): Int = foo(41)
-val baz = bar()
+transparent inline def baz(): Int = foo(1)
+val qux = bar()
 ```
 
-An object that's only used as the receiver of `transparent inline` calls isn't referenced by their expansions either,
-so it's reported as unused.
+find-unused considers every `transparent inline` method in the top-level class that defines `bar` whose body leads to
+`foo` this way used, so `baz` isn't reported either, and neither are `bar` and `baz` when only `foo` is called. And an object that's only used as the receiver of the
+`transparent inline` methods it inherits, like `object Foo extends Bar`, where `Bar` defines them, isn't referenced by
+their expansions, so it's reported as unused.
 
 ### Lack of support for multiple Scala versions
 
