@@ -18,7 +18,10 @@ case class FindUnusedExclusion(src: Option[Regex], sym: Option[Regex]) {
       case _ => true
     }
   def matches(name: String, pos: Option[String]): Boolean = srcMatches(pos) && sym.forall(_.findFirstIn(name).nonEmpty)
-  def label: String = List("src" -> src, "sym" -> sym).flatMap((k, v) => v.map(r => s"$k=$r")).mkString(" & ")
+  private def filters: List[String] = List("src" -> src, "sym" -> sym).flatMap((k, v) => v.map(r => s"$k=$r"))
+  def label: String = filters.mkString(" & ")
+  // The CLI's `--exclusion` argument, as the plugin passes it
+  def toArg: String = filters.mkString("&")
 }
 object FindUnusedExclusion {
   def apply(src: Regex): FindUnusedExclusion = new FindUnusedExclusion(src = Some(src), sym = None)
@@ -35,8 +38,10 @@ extension (e: FindUnusedExclusion) {
     e.matches(name, pos) || defaultOf(name).exists(e.matches(_, pos))
 }
 
+// With `--args`, prints each exclusion as the CLI's `--exclusion` argument instead, one per line, for `compare_builds.sh`
 @main def excl(reported: String*): Unit =
-  reported.foreach { file =>
+  if (reported == Seq("--args")) exclusions.foreach(e => println(e.toArg))
+  else reported.foreach { file =>
     val syms = Source.fromFile(file).getLines().toList.map(_.split('\t')).map(a => (a(0), a.lift(1).filter(_.nonEmpty)))
     println(s"##### $file: ${syms.size} reported")
     exclusions.zipWithIndex.foreach { (e, i) =>

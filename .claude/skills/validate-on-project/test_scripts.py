@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Checks `remove_defaults.py` and `table2tsv.py` on small inputs. CI runs it; run it after changing either script."""
+"""Checks `classpath.py`, `remove_defaults.py`, `table2tsv.py` and `pr-stack/resolve_conflicts.py` on small inputs. CI runs
+it; run it after changing them."""
 import os
 import subprocess
 import sys
@@ -87,5 +88,54 @@ with tempfile.TemporaryDirectory() as d:
     run("remove_defaults.py", "all.tsv", "--apply", cwd=d)
     with open(os.path.join(d, "Foo.scala"), encoding="utf-8", newline="") as f:
         check("remove_defaults.py --apply", f.read(), EXPECTED.replace("\n", "\r\n"))
+
+# sbt 1 and sbt 2 export layouts, each project's classpath on the last line
+with tempfile.TemporaryDirectory() as d:
+    export = os.path.join("streams", "test", "fullClasspath", "_global", "streams", "export")
+    sbt1 = os.path.join(d, "a", "target", export)
+    sbt2 = os.path.join(d, "target", "out", "jvm", "scala-3.10.0", "b", export)
+    for path, line in [
+        (sbt1, os.pathsep.join(["/x/a-classes", "/x/lib.jar"])),
+        (sbt2, "List(${OUT}/jvm/scala-3.10.0/b/b_3-1.0.jar>sha256-0f/12, ${CSR_CACHE}/lib.jar, /x/lib.jar)"),
+    ]:
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("ignored first line\n" + line + "\n")
+    stale = os.path.join(d, "target", "out", "jvm", "scala-3.8.4", "b", export)
+    os.makedirs(os.path.dirname(stale))
+    with open(stale, "w", encoding="utf-8") as f:
+        f.write("List(/old/lib.jar)\n")
+    env_cache = os.environ.get("COURSIER_CACHE")
+    os.environ["COURSIER_CACHE"] = "/cache"
+    try:
+        check(
+            "classpath.py",
+            run("classpath.py", d, "--scala", "3.10.0", cwd=d).splitlines(),
+            ["/x/a-classes", "/x/lib.jar", os.path.join(d, "target", "out", "jvm", "scala-3.10.0", "b", "b_3-1.0.jar"), "/cache/lib.jar"],
+        )
+    finally:
+        if env_cache is None:
+            del os.environ["COURSIER_CACHE"]
+        else:
+            os.environ["COURSIER_CACHE"] = env_cache
+
+# Conflict blocks are replaced in order, by side or by text
+with tempfile.TemporaryDirectory() as d:
+    path = os.path.join(d, "f")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("a\n<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs\nb\n<<<<<<< ours\n1\n=======\n2\n>>>>>>> theirs\n")
+    with open(os.path.join(d, "r.json"), "w", encoding="utf-8") as f:
+        f.write('["theirs", "three\\n"]')
+    run(os.path.join("..", "pr-stack", "resolve_conflicts.py"), path, os.path.join(d, "r.json"), cwd=d)
+    with open(path, encoding="utf-8") as f:
+        check("resolve_conflicts.py", f.read(), "a\ny\nb\nthree\n")
+    # diff3 style: the base section isn't part of either side
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("<<<<<<< ours\nx\n||||||| base\nb\n=======\ny\n>>>>>>> theirs\n")
+    with open(os.path.join(d, "r.json"), "w", encoding="utf-8") as f:
+        f.write('["ours"]')
+    run(os.path.join("..", "pr-stack", "resolve_conflicts.py"), path, os.path.join(d, "r.json"), cwd=d)
+    with open(path, encoding="utf-8") as f:
+        check("resolve_conflicts.py with diff3 markers", f.read(), "x\n")
 
 print("ok")

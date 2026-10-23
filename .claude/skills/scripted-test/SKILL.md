@@ -76,4 +76,16 @@ committed or lives somewhere else; check out the base commit's versions of those
 - For anything that depends on how the compiler encodes code (bytecode names, TASTy shapes), also run the older Scala
   versions CI uses: `sbt -Dscripted.scala.version=3.8.4 'plugin3/scripted find-unused/<name>'` (and `3.9.0`; the full
   list is `scriptedScalaVersions` in `build.sbt`).
-- The full local check is `sbt 'test; scripted'`.
+- The full local check is `sbt 'test; scripted'`, about 4 minutes for both sbt versions.
+
+## Running the whole suite while you keep working
+
+- **Run it in a scratch clone.** A scripted run executes the CLI from this checkout's compiled classes
+  (`BuildInfo.cliClasspath` is `cli3`'s `Runtime / fullClasspath`), so recompiling here while it runs changes what the
+  rest of the suite tests. To keep editing, clone the repository to a scratch directory, check out the commit to test,
+  and run it there.
+- **Never run two at once.** Scripted publishes the plugin locally under the snapshot version, so two suites, or a
+  suite and a `publishLocal`, overwrite each other's plugin. This includes another checkout of find-unused.
+- **A known flake:** `Reload for scripted batch execution failed`, caused by
+  `IllegalArgumentException: For input string: "GET /... HTTP/1.1"`. Another local process sent an HTTP request to the
+  socket scripted uses to drive its test builds. Rerun the test.

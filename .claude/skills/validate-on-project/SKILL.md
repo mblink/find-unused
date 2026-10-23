@@ -14,7 +14,10 @@ analysis got better *or* that it now hides real dead code, so every change in ou
 sbt publishLocal                     # here: publishes core, cli and both plugins as the current -SNAPSHOT
 ```
 
-In the project (a worktree of it, not someone's working tree), point `project/plugins.sbt` at the snapshot version.
+Work in a worktree of the project, or in an export of it, not in someone's working tree. To export, run
+`git archive <ref> | tar -x -C <scratch dir>`, then `git init` and commit there if the build reads git state. An
+export lacks what the project generates outside sbt, e.g. assets a Node build writes for templates, so generate those
+the way the project's own docs or skills say before compiling. Point `project/plugins.sbt` at the snapshot version.
 The plugin resolves the CLI from local Ivy (among other repositories), so nothing else is needed. Add a
 local-only `.sbt` file (named so it sorts after `build.sbt`, e.g. `zz-find-unused-local.sbt`) and don't commit it:
 
@@ -60,17 +63,29 @@ Build a script from it plus the project's exclusion block copied verbatim from `
 `Global / findUnusedExclusions ++= Seq(` to `val exclusions: Seq[FindUnusedExclusion] = Seq(`, and include any helper
 it uses), then `scala-cli run` it with `all.tsv`. For each exclusion it prints
 how many findings it matches; an exclusion that matches nothing is stale or no longer needed. `findUnusedAll` also lists
-the exclusions that don't exclude anything after its results, which is the quicker check.
+the exclusions that don't exclude anything after its results, which is the quicker check. Run with `--args` instead of
+a file, it prints each exclusion as the CLI's `--exclusion` argument, for `compare_builds.sh`.
 
 In transitive mode the replay overcounts what's left unexcluded: an exclusion also keeps what the excluded code uses,
 which a filter can't reproduce, so code that only excluded code uses (e.g. the overrides of a member that's only used
 from outside the analysis) shows up as matching no exclusion. Only a run with the real exclusions tells you what's
 reported.
 
-To compare before and after a find-unused change on the same compiled project, run the analysis in-process with the
-`benchmark` skill's harness against both builds of `core` and diff the lists. That harness only runs the givens
-analysis without `--transitive`; for anything else, publish each build of find-unused locally in turn and diff the
-plugin's output files. Check that nothing is *newly* reported, and explain every finding that disappears. When a change is meant to report a
+To compare before and after a find-unused change on the same compiled project, run both builds of the CLI on it with
+`compare_builds.sh`. It diffs their output in every mode (default and transitive, `all`, `givens` and `explicits`, with
+and without the exclusions) without `publishLocal` or sbt, and takes a minute or two on a large project, running three
+analyses at once with 8 GB each (set `JOBS` and `HEAP` to change that). Build each side with `sbt cli3/assembly` and
+copy `cli/target/jvm-3/find-unused-cli-assembly-*.jar` away before switching commits. Its inputs are files in one
+directory:
+
+- `classpath.txt`, from `classpath.py <build root>` (sbt 1 or 2, after the project's tests are compiled), adding
+  `--scala <version>` if it says the build has output for more than one Scala version
+- `packages.txt`, with `findUnusedPackages`
+- `exclusions.txt`, from the replay script's `--args`
+- `records.txt`, with the `<classes>-find-unused` directories, if the project was compiled with the compiler plugin
+
+Its output is the plugin's, but with positions relative to the build root. Check that nothing is
+*newly* reported, and explain every finding that disappears. When a change is meant to report a
 new kind of code, the reverse applies: prove every new finding is unused (step 3), and treat each one that isn't as a
 bug to fix before going on. Rerun after each fix and diff against the previous run, so a fix that removes more than
 the false positives it targets shows up.
@@ -122,9 +137,10 @@ default that only unused code relies on is reported too. Every caller already pa
 the default getters (`bar$default$2`, `$lessinit$greater$default$1`) and their trait forwarders in implementing
 classes should disappear.
 
-`test_scripts.py` checks `remove_defaults.py` and `table2tsv.py` on small inputs, and CI runs it; add a case to it when
-fixing either. `sbt test` compiles the Scala scripts here and in `benchmark` against `core` (the `skills3` project),
-with a stub for the `exclusions` that `ExclusionsPrelude.scala` expects.
+`test_scripts.py` checks `classpath.py`, `remove_defaults.py`, `table2tsv.py` and `pr-stack`'s `resolve_conflicts.py` on
+small inputs, and CI runs it; add a case to it when fixing one. `sbt test` compiles the Scala scripts here and in
+`benchmark` against `core` (the `skills3` project), with a stub for the `exclusions` that `ExclusionsPrelude.scala`
+expects.
 
 ## Known gaps found this way
 

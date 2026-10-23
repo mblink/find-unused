@@ -65,7 +65,7 @@ Each one is a miniature sbt build containing real Scala sources with known unuse
   `scripted-test` skill shows how to capture it when output changes legitimately.
 
 To check a change against a real codebase, or before deleting code find-unused reports, follow the
-`validate-on-project` skill.
+`validate-on-project` skill. To change a PR that others are stacked on, follow the `pr-stack` skill.
 
 Adding a case for a new TASTy pattern means adding a directory here, not a unit test. `scalaVersion` comes from
 `sys.props("scala.version")` and the plugin version from `sys.props("plugin.version")`, both injected by
@@ -234,7 +234,9 @@ by its parameters' erased types (its signature, as the compiler does) because ta
 like parameters written with an `export`ed alias of a generic class; comparing the types themselves with `matches`
 accepts overloads, since it's true for any two value types. `signatureWithoutErasedParams` strips `erased` params so
 call sites match definitions. `core/src/main/scala/tastyquery/SymbolsOps.scala` lives in the `tastyquery` package
-specifically to reach package-private API (flags, signatures, a type's class). Prefer adding a narrow, commented workaround
+specifically to reach package-private API (flags, signatures, a type's class).
+`.claude/skills/diagnose-false-positive/tasty-query.md` records what causes each workaround and the upstream fix that
+would remove it. Prefer adding a narrow, commented workaround
 in this style over changing the general traversal.
 
 ## Plugin architecture
