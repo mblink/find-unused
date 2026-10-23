@@ -41,6 +41,8 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     val findUnusedDebug = settingKey[Boolean]("Whether to enable debug output for find-unused")
 
+    val findUnusedTransitive = settingKey[Boolean]("Whether find-unused also reports code that's only used by unused code")
+
     val findUnusedPackages = settingKey[Seq[String]]("Packages to analyze with find unused")
 
     @cacheLevel(include = Array.empty)
@@ -105,6 +107,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     findUnusedOutputFile := None,
     findUnusedStoreProjectClasspaths := findUnusedStoreProjectClasspathsTask.evaluated,
     findUnusedDebug := false,
+    findUnusedTransitive := false,
     findUnusedPackages := Seq.empty,
     findUnusedOnFail := (code => throw new MessageOnlyException(s"find-unused failed (exit code $code)")),
     findUnusedExclusions := Seq.empty,
@@ -284,12 +287,14 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val rootDir = (ThisBuild / baseDirectory).value.toString
     val termWidth = terminal.value.getWidth
     val debug = findUnusedDebug.value
+    val transitive = findUnusedTransitive.value
     val exclusions = findUnusedExclusions.value
 
     (forkOpts, classpathOpts, (cmd: String) => {
       val javaOpts =
         Seq(cmd) ++
         (if (debug) Seq("--debug") else Seq.empty) ++
+        (if (transitive) Seq("--transitive") else Seq.empty) ++
         (if (useRootDir) Seq("--root-directory", rootDir) else Seq.empty) ++
         outputFile.map(f => Seq("--output", f.toString)).getOrElse(Seq.empty) ++
         Seq("--width", termWidth.toString) ++

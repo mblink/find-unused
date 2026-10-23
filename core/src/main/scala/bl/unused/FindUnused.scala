@@ -33,14 +33,17 @@ object FindUnused {
         Symbols.isInPackage(pkgSyms),
         sym => symbolIsValid(sym) && Symbols.isInPackage(pkgSyms)(sym),
         // Only `given`s are affected by implicit searches that happen after TASTy is pickled
-        sym => Symbols.isGiven(sym) && bytecodeRefs.isReferenced(sym),
+        sym => if (Symbols.isGiven(sym)) bytecodeRefs.callers(sym) else Set.empty,
       )
 
       val refs = packages.foldMap { p =>
         println(s"[find-unused] Analyzing package $p")
         Symbols.references(ctx.findPackage(p)).run(env, SeenSymbols.empty)._2
       }
-      markPossiblySummonedInlineGivens(refs, debug)
+      markPossiblySummonedInlineGivens(
+        if (refs.bytecodeCallers.isEmpty) refs else refs.attributeBytecodeCallers(bytecodeRefs.outers),
+        debug,
+      )
     }
   }
 
