@@ -23,6 +23,14 @@ Global / findUnusedOutputFile := Some(file("/absolute/scratch/all.txt"))
 Global / findUnusedExclusions := Seq() // see everything; replay the real exclusions offline (step 2)
 ```
 
+With `findUnusedOutputFile` set, the CLI's `[find-unused] ...` progress lines are lost (the output file replaces
+them), so run once with `Global / findUnusedOutputFile := None` when you need them, e.g. to see whether the compiler
+plugin's records were used or find-unused fell back to checking `inline given`s conservatively.
+
+To try the compiler plugin, add `Global / findUnusedCompilerPlugin := true` and recompile everything (`clean`) first;
+the records are only used when every analyzed class has one. Compare its results with a run without it: anything it
+newly reports is an `inline given` the conservative check kept, which still has to be proven unused.
+
 Write each run to its own file (`all.txt`, `all-transitive.txt`). Run the task the project's CI runs, and then with
 `Global / findUnusedTransitive := true` too: transitive mode finds
 dead code that references itself or is only used by other dead code, which the default mode can't. `findUnusedAll`
@@ -39,12 +47,21 @@ python3 .claude/skills/validate-on-project/table2tsv.py all.txt > all.tsv   # na
 Build a script from it plus the project's exclusion block copied verbatim from `build.sbt` (rename
 `Global / findUnusedExclusions ++= Seq(` to `val exclusions: Seq[FindUnusedExclusion] = Seq(`, and include any helper
 it uses), then `scala-cli run` it with `all.tsv`. For each exclusion it prints
-how many findings it matches; an exclusion that matches nothing is stale or no longer needed.
+how many findings it matches; an exclusion that matches nothing is stale or no longer needed. `findUnusedAll` also lists
+the exclusions that don't exclude anything after its results, which is the quicker check.
+
+In transitive mode the replay overcounts what's left unexcluded: an exclusion also keeps what the excluded code uses,
+which a filter can't reproduce, so code that only excluded code uses (e.g. the overrides of a member that's only used
+from outside the analysis) shows up as matching no exclusion. Only a run with the real exclusions tells you what's
+reported.
 
 To compare before and after a find-unused change on the same compiled project, run the analysis in-process with the
 `benchmark` skill's harness against both builds of `core` and diff the lists. That harness only runs the givens
 analysis without `--transitive`; for anything else, publish each build of find-unused locally in turn and diff the
-plugin's output files. Check that nothing is *newly* reported, and explain every finding that disappears.
+plugin's output files. Check that nothing is *newly* reported, and explain every finding that disappears. When a change is meant to report a
+new kind of code, the reverse applies: prove every new finding is unused (step 3), and treat each one that isn't as a
+bug to fix before going on. Rerun after each fix and diff against the previous run, so a fix that removes more than
+the false positives it targets shows up.
 
 ## 3. Before removing anything find-unused reports, prove it's unused
 
@@ -104,8 +121,8 @@ with a stub for the `exclusions` that `ExclusionsPrelude.scala` expects.
   resolve the decoder for an opaque type's field through an `inline given` that just returns the underlying type's
   decoder. `InlineSummons` treats such an `inline given` as used if its type class is summoned by an inline method
   the code calls, which trades this false positive for not reporting unused `inline given`s of those type classes.
-  The exact fix would need a compiler plugin running after the `inlining` phase, where `Inlined` trees still carry
-  the full call.
+  Enabling the compiler plugin (`findUnusedCompilerPlugin := true`, then recompiling everything) makes it exact;
+  if find-unused says a class wasn't compiled with it, it's still checking conservatively.
 - **Members found by name in macros** (e.g. `TypeRepr.typeSymbol.typeMember("Out")`) aren't referenced in TASTy or
   bytecode.
 - **Wildcard exports** (`export cats.syntax.parallel.*`) report every unused forwarder; that's correct, but the fix

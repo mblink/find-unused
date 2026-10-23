@@ -116,12 +116,20 @@ case class References(
         .getOrElse(Set.empty)
     }
 
-    val (attributed, roots) = bytecodeCallers.toList.foldLeft((usedFrom, used)) { case ((from, roots), (sym, callers)) =>
-      val sources = callers.toList.map((cls, m) => resolve(cls, Some(m), 0))
-      if (sources.exists(_.isEmpty)) (from, roots + sym)
-      else (sources.flatten.foldLeft(from)((acc, s) => acc |+| Map(s -> Set(sym))), roots)
-    }
-    copy(usedFrom = attributed, used = roots, bytecodeCallers = Map.empty)
+    usedFromSources(bytecodeCallers.view.mapValues(_.toList.map((cls, m) => resolve(cls, Some(m), 0))).toMap)
+      .copy(bytecodeCallers = Map.empty)
+  }
+
+  /**
+   * Records each symbol in `sources` as used from the definitions that its references were found in, one set of
+   * candidates per reference, or as used no matter what if one of its references couldn't be placed in a definition
+   */
+  final def usedFromSources(sources: Map[Sym, List[Set[Sym]]]): References = {
+    val (unplaced, placed) = sources.partition(_._2.exists(_.isEmpty))
+    copy(
+      used = used ++ unplaced.keys,
+      usedFrom = placed.foldLeft(usedFrom) { case (acc, (sym, from)) => acc |+| from.flatten.map(_ -> Set(sym)).toMap },
+    )
   }
 
   // A default value isn't reported when its method is, or when its method isn't analyzed, e.g. a `given`'s default when

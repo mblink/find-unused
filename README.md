@@ -23,6 +23,7 @@ See below for more details on setup and use.
 - [Transitive mode](#transitive-mode)
 - [Known issues](#known-issues)
   - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
+    - [Exact results for `inline given`s](#exact-results-for-inline-givens)
   - [`transparent inline` methods that reduce to a constant](#transparent-inline-methods-that-reduce-to-a-constant)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
 - [Debugging](#debugging)
@@ -84,6 +85,7 @@ There are a couple options you must pass, as well as some optional ones:
 |`--exclusion`|Optional, repeated|Code to exclude from unused warnings, see [Exclusions](#exclusions)|
 |`--root-directory`|Optional|The path to the root of your codebase; used when reporting code positions|
 |`--transitive`|Optional|Also report code that's only used by unused code, see [Transitive mode](#transitive-mode)|
+|`--inline-given-records`|Optional, repeated|Directories the compiler plugin wrote to, see [Exact results for `inline given`s](#exact-results-for-inline-givens)|
 
 #### Example usage
 
@@ -231,6 +233,25 @@ val foos = sorted(List(Foo(2), Foo(1)))
 
 The walk can't follow a macro's call to an abstract method into its implementations, so a type class that's only
 summoned there isn't seen, and its `inline given`s can be reported even when they're used.
+
+#### Exact results for `inline given`s
+
+find-unused's compiler plugin records the `inline given`s that inlining expands, so it can tell exactly which ones are
+used instead. Enable it in the sbt plugin with:
+
+```scala
+Global / findUnusedCompilerPlugin := true
+```
+
+This adds the plugin to every Scala 3 project, which writes its records next to each class directory, adding
+`-find-unused` to its name. The records are only used when every class find-unused analyzes has one; otherwise
+find-unused says which class doesn't, and checks `inline given`s as described above. So after enabling the plugin,
+recompile everything, e.g. after a `clean`. That includes classes in the analyzed packages that come from a library jar,
+which has no records, so keep those packages to the code the build compiles. sbt 2 can also restore classes from its
+cache without running the compiler, which then doesn't write their records. A record next to a class directory that no
+longer has its class, e.g. because the class moved to another project, is ignored. Without the sbt plugin, compile with
+`-Xplugin:<path to find-unused-compiler-plugin_3.jar>`, optionally with `-P:find-unused:out:<dir>` to write somewhere
+else, and pass each directory to the CLI with `--inline-given-records`.
 
 ### `transparent inline` methods that reduce to a constant
 
