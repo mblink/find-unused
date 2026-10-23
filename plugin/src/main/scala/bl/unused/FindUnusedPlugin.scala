@@ -45,6 +45,12 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
 
     val findUnusedPackages = settingKey[Seq[String]]("Packages to analyze with find unused")
 
+    val findUnusedCompilerPlugin =
+      settingKey[Boolean]("Whether to compile Scala 3 projects with find-unused's compiler plugin, which records the inline givens they expand")
+
+    val findUnusedInlineGivenRecords =
+      settingKey[Seq[File]]("Where find-unused's compiler plugin records the inline givens a project expands, if it's enabled")
+
     @cacheLevel(include = Array.empty)
     val findUnusedOnFail = taskKey[Int => Unit]("Callback to run when any find-unused command fails")
 
@@ -109,6 +115,7 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     findUnusedDebug := false,
     findUnusedTransitive := false,
     findUnusedPackages := Seq.empty,
+    findUnusedCompilerPlugin := false,
     findUnusedOnFail := (code => throw new MessageOnlyException(s"find-unused failed (exit code $code)")),
     findUnusedExclusions := Seq.empty,
     findUnusedExplicits := findUnusedExplicitsTask.value,
@@ -121,8 +128,26 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     Keys.commands ++= commands,
   )
 
+  private def usesCompilerPlugin = Def.setting(findUnusedCompilerPlugin.value && scalaBinaryVersion.value == "3")
+
   override lazy val projectSettings: Seq[Setting[?]] = Def.settings(
     findUnusedFullTestClasspath := findUnusedFullTestClasspathTask.value,
+    // The compiler plugin writes next to the class directory, since builds often replace `scalacOptions`
+    findUnusedInlineGivenRecords := (
+      if (usesCompilerPlugin.value)
+        Seq((Compile / classDirectory).value, (Test / classDirectory).value)
+          .map(d => new File(d.getParentFile, d.getName ++ "-find-unused"))
+      else Seq.empty
+    ),
+    libraryDependencies ++= (
+      if (usesCompilerPlugin.value && !findUnusedUseLocalClasspath.value)
+        Seq(compilerPlugin("bondlink" % "find-unused-compiler-plugin_3" % BuildInfo.version))
+      else Seq.empty
+    ),
+    scalacOptions ++= (
+      if (usesCompilerPlugin.value && findUnusedUseLocalClasspath.value) Seq(s"-Xplugin:${BuildInfo.compilerPluginJar}")
+      else Seq.empty
+    ),
   )
 
   // https://stackoverflow.com/a/39868021/2163024
@@ -289,6 +314,10 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
     val debug = findUnusedDebug.value
     val transitive = findUnusedTransitive.value
     val exclusions = findUnusedExclusions.value
+    val inlineGivenRecords = {
+      val state = Keys.state.value
+      scalaProjectRefs(state).flatMap(p => state.setting(p / findUnusedInlineGivenRecords).map(_.toString)).distinct
+    }
 
     (forkOpts, classpathOpts, (cmd: String) => {
       val javaOpts =
@@ -300,7 +329,8 @@ object FindUnusedPlugin extends AutoPlugin with FindUnusedPluginCompat {
         Seq("--width", termWidth.toString) ++
         projPackages.flatMap(Seq("--package", _)) ++
         projClasspath.flatMap(Seq("--classpath", _)) ++
-        exclusions.flatMap(e => Seq("--exclusion", e.toArg))
+        exclusions.flatMap(e => Seq("--exclusion", e.toArg)) ++
+        inlineGivenRecords.flatMap(Seq("--inline-given-records", _))
 
       log.debug(s"Running find-unused with arguments: ${javaOpts.mkString(" ")}")
 

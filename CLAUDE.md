@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Scala 3 tool that finds unused code by reading the TASTy files the compiler emits and walking them with
 [tasty-query](https://github.com/scalacenter/tasty-query), supplemented by a scan of the compiled bytecode for
-`given`s and default values that TASTy can't see being used. It ships as an sbt plugin and a standalone CLI jar.
+`given`s, default values and `object`s that TASTy can't see being used. It ships as an sbt plugin and a standalone CLI
+jar, with an optional compiler plugin for exact `inline given` results.
 `README.md` documents user-facing setup, options, exclusions, default values, auxiliary constructors, transitive mode,
 and known limitations (unused `inline given`s of type classes that inline methods summon, `transparent inline` methods
 that reduce to a constant, single-Scala-version builds) — read it before changing behavior that's documented
@@ -22,6 +23,7 @@ Projects are built with sbt-projectmatrix, so the sbt project ids carry a Scala-
 | `cli3` | `cli/` | `bl.unused.FindUnusedCli` main class, mainargs parsing, table rendering. Assembled into one jar (CI names it `find-unused.jar`). |
 | `plugin2_12` / `plugin3` | `plugin/` | The sbt plugin. `2_12` targets sbt 1.9.0, `3` targets sbt 2.0.0. |
 | `skills3` | `.claude/skills/` | Compiles the skills' scala-cli scripts against `core`, so `sbt test` catches them breaking. Not published. |
+| `compiler-plugin3` | `compiler-plugin/` | The optional compiler plugin that records the `inline given`s inlining expands. Built with the oldest supported Scala version, so it runs in newer compilers. |
 
 ## Commands
 
@@ -31,6 +33,7 @@ sbt scripted                              # runs all plugin integration tests, b
 sbt 'plugin3/scripted find-unused/all'    # a single scripted test under sbt 2
 sbt 'plugin2_12/scripted find-unused/*'   # all scripted tests under sbt 1
 sbt cli3/assembly                         # builds the standalone jar into cli/target/jvm-3/
+sbt compiler-plugin3/package              # builds the compiler plugin jar into compiler-plugin/target/jvm-3/
 sbt githubWorkflowGenerate                # regenerate .github/workflows/ after editing build.sbt
 ```
 
@@ -156,8 +159,16 @@ changing it:
   classes like `Any` and `Object` don't count, and when there are too many methods to walk, every `inline given` is
   considered used. Libraries compiled with Scala 3.3 pickle splices and quotes as calls to
   `scala.quoted.runtime.Expr.splice`/`nestedSplice`/`quote` rather than `Splice`/`Quote` trees, so the walk handles
-  both. The exact alternative would be a compiler plugin running after the `inlining` phase, where `Inlined` trees
-  still carry the full call.
+  both.
+- The exact alternative is the compiler plugin (`compiler-plugin/`, `FindUnusedCompilerPlugin`), which runs after the
+  `inlining` phase, where an `Inlined` tree's `call` is the `inline given` it expands, and `ctx.owner` the definition
+  expanding it. It writes one record per top-level class, named after its TASTy file, using `Symbols.name`'s format for
+  both. `InlineGivenRecords` only returns them when every analyzed top-level class with TASTy has one, since a class
+  compiled without the plugin can expand any `inline given` (it skips a record in `<classes>-find-unused` when
+  `<classes>` doesn't have the class's TASTy anymore, since the compiler never deletes records), and
+  `FindUnused.markRecordedInlineGivens` then uses them
+  in place of `InlineSummons`, attributing each expansion to the innermost analyzed definition around it. `Inlined`
+  trees from `transparent inline` calls are trimmed before pickling, in memory too, so it can't help with those.
 
 Before adding a TASTy workaround for a missing reference, check whether the reference exists in TASTy at all — the
 `diagnose-false-positive` skill covers how.
@@ -223,7 +234,13 @@ alongside, which is why it's avoided when possible (the `no-cross-switch` test c
 currently requires one Scala version across the build.
 
 The CLI comes either from `BuildInfo.cliClasspath` (when `findUnusedUseLocalClasspath := true`, used by scripted
-tests) or from a coursier fetch of `bondlink:find-unused-cli_3:<BuildInfo.version>`.
+tests) or from a coursier fetch of `bondlink:find-unused-cli_3:<BuildInfo.version>`. `findUnusedCompilerPlugin` adds the
+compiler plugin to every Scala 3 project the same way: `-Xplugin:` with `BuildInfo.compilerPluginJar`, or a
+`compilerPlugin` dependency, whose `-Xplugin:` sbt adds even when a build replaces `scalacOptions`. So the compiler
+plugin writes next to the class directory, `<classes>-find-unused`, unless given `-P:find-unused:out:<dir>`, and
+`findUnusedInlineGivenRecords` computes the same directories to pass to the CLI as `--inline-given-records`. They're
+outside the class directories, since sbt 2 puts jars on the classpath (`exportJars`) and the records shouldn't be
+published.
 
 `plugin/src/main/scala/` must compile under **both** Scala 2.12/sbt 1 and Scala 3/sbt 2 — keep it Scala-2-compatible
 syntax. Version-specific pieces go in `FindUnusedPluginCompat` under `plugin/src/main/scala-2/` and

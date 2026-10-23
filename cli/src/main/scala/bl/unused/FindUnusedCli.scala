@@ -78,6 +78,7 @@ object FindUnusedCli {
     @arg(short = 'p', doc = "Packages to analyze") `package`: Seq[String],
     @arg(short = 'c', doc = "Classpath") classpath: Seq[String],
     @arg(short = 'e', doc = "Exclusions") exclusion: Seq[Exclusion],
+    @arg(doc = "Directories find-unused's compiler plugin wrote the inline givens it saw expanded to") inlineGivenRecords: Seq[String],
     @arg(short = 'w', doc = "Terminal width") width: Option[Int],
     @arg(short = 'o', doc = "Output file") output: Option[String],
     @arg(doc = "Disable color output") noColor: Flag,
@@ -108,6 +109,7 @@ object FindUnusedCli {
         args.rootDirectory.map(Paths.get(_)),
         args.`package`,
         args.classpath.distinct.map(Paths.get(_)),
+        args.inlineGivenRecords.distinct.map(Paths.get(_)),
       )
 
       if (args.debug.value)

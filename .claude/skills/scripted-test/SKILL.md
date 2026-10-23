@@ -13,12 +13,20 @@ section of `CLAUDE.md` for what each file does.
 1. Copy the closest existing test. Single-project tests (`inline`, `summonFrom`) keep sources in `src/`;
    multi-project tests (`givens`, `summon`) use `a/` and `b/` with `b.dependsOn(a)`. Use a multi-project build when the
    test needs a macro, since a macro must be compiled before the code that expands it.
-2. Keep `project/plugins.sbt` and the `findUnused*` settings in `build.sbt` exactly as in the other tests.
+2. Keep `project/plugins.sbt` and the `findUnused*` settings in `build.sbt` exactly as in the other tests. A new test
+   directory needs its own copy of `project/plugins.sbt`; without it, loading the build fails with
+   `Not found: findUnusedUseLocalClasspath`.
 3. Put sources in package `bl.unused`, which is what `findUnusedPackages` analyzes.
 4. Include a control case: something that should still be reported. A test where everything is used would also pass
    if the analysis were disabled.
 5. If the test expects findings, the script uses `-> findUnusedGivens` (or `Explicits`/`All`), because finding unused
-   code exits 1.
+   code exits 1. A test can run several analyses in turn, e.g. `> set Global / findUnusedTransitive := true` between
+   two `findUnusedAll`s compared with `expected.txt` and `expected-transitive.txt`. To change files between runs in a
+   way that works under both sbt versions, whose `target` layouts differ, define a task in the test's `build.sbt` that
+   computes the path from a setting, as the `compiler-plugin` test's `deleteRecord` does.
+6. If the output depends on how the compiler pickles something, run the test on every Scala version in
+   `scriptedScalaVersions` (`-Dscripted.scala.version=<v>`): they must give the same output, since CI compares all of
+   them with one `expected.txt`.
 
 ## Capturing the actual output
 
