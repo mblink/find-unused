@@ -24,11 +24,13 @@ object Sym {
   private def cached(sym: Symbol)(compute: => EnvR[Sym]): EnvR[Sym] =
     cache.synchronized(cache.get(sym).fold(compute.map(s => cache.put(sym, s).pipe(_ => s)))(_.pure[EnvR]))
 
-  def fromSymbol(sym: Symbol): EnvR[Sym] =
+  def fromSymbol(sym: Symbol)(using ctx: Context): EnvR[Sym] =
     cached(sym)(EnvR.noSeenSymbols(env => new Sym(
       id = id(sym),
-      name = Symbols.name(sym),
-      pos = sym.tree.map(t => Positions.format(env.rootDirectory, t.pos)),
+      name = Symbols.displayName(sym),
+      // A default value is reported at its parameter, rather than in the middle of its expression
+      pos = Symbols.defaultGetterParam(sym).flatMap(_._2.tree).orElse(sym.tree)
+        .map(t => Positions.format(env.rootDirectory, t.pos)),
     )))
 }
 
@@ -56,6 +58,9 @@ case class References(
   externalOverrides: Set[Sym] = Set.empty,
   // Definitions that override something in the analyzed code, mapped to what they override
   internalOverrides: Map[Sym, Set[Sym]] = Map.empty,
+  // Default getters, mapped to their method, or their class for a constructor's. A default isn't reported separately
+  // when its method is.
+  defaultValueOf: Map[Sym, Sym] = Map.empty,
   // Symbols referenced by `import`s outside any definition, which don't use anything themselves
   importRefs: Set[Sym] = Set.empty,
   // `given`s referenced in bytecode, with the classes and methods that reference them, and the JVM names of
@@ -69,12 +74,13 @@ case class References(
     copy(used = used.filterNot(_.id === c), usedFrom = usedFrom.view.mapValues(_.filterNot(_.id === c)).toMap)
   }
 
-  final def addUsedProxy(m: Map[Symbol, Set[Symbol]]): EnvR[References] =
+  final def addUsedProxy(m: Map[Symbol, Set[Symbol]])(using ctx: Context): EnvR[References] =
     m.toList.filter(_._2.nonEmpty).foldMapM((s, ss) =>
       (Sym.fromSymbol(s), ss.toList.traverse(Sym.fromSymbol)).mapN((s, ss) => Map(s -> ss.toSet))
     ).map(m => copy(usedProxy = usedProxy |+| m))
 
-  final def addUsedProxy(ifUsed: Symbol, thenUsed: Set[Symbol]): EnvR[References] = addUsedProxy(Map(ifUsed -> thenUsed))
+  final def addUsedProxy(ifUsed: Symbol, thenUsed: Set[Symbol])(using ctx: Context): EnvR[References] =
+    addUsedProxy(Map(ifUsed -> thenUsed))
 
   /**
    * Attributes the bytecode references in `bytecodeCallers` to the definitions that make them, so they only count in
@@ -118,13 +124,23 @@ case class References(
     copy(usedFrom = attributed, used = roots, bytecodeCallers = Map.empty)
   }
 
+  // A default value isn't reported when its method is, or when its method isn't analyzed, e.g. a `given`'s default when
+  // only explicits are
+  private def isDefaultOfUnreported(unused: Set[Sym])(s: Sym): Boolean =
+    defaultValueOf.get(s).exists(m => unused.contains(m) || !defined.contains(m))
+
+  /** `isExcluded`, extended to the default values of excluded methods */
+  final def excludingDefaultsOf(isExcluded: Sym => Boolean): Sym => Boolean =
+    s => isExcluded(s) || defaultValueOf.get(s).exists(isExcluded)
+
   final lazy val computeUnused: Set[Sym] = {
     // An entry point is used, and so is what it's in, e.g. the object a `main` method is in
     def withOwners(s: Sym): List[Sym] = s :: owners.get(s).toList.flatMap(withOwners)
     val referenced = used ++ usedFrom.valuesIterator.flatten ++ externalOverrides ++ internalOverrides.keys ++ importRefs ++
       entryPoints.flatMap(withOwners)
     val allUsed = References.reachable(referenced)((s, _) => usedProxy.getOrElse(s, Set.empty))
-    defined.filterNot(allUsed.contains)
+    val unused = defined.filterNot(allUsed.contains)
+    unused.filterNot(isDefaultOfUnreported(unused))
   }
 
   /**
@@ -157,7 +173,7 @@ case class References(
         (overridesByOwner.get(Some(s)).iterator.flatten ++ overridesByBase.get(s).iterator.flatten).filter(overrideIsAlive)
     }
     val unused = defined.filterNot(s => alive.contains(s) || isExcluded(s))
-    unused.filterNot(s => owners.get(s).exists(unused.contains))
+    unused.filterNot(s => owners.get(s).exists(unused.contains) || isDefaultOfUnreported(unused)(s))
   }
 }
 
@@ -196,6 +212,7 @@ object References {
         x.entryPoints ++ y.entryPoints,
         x.externalOverrides ++ y.externalOverrides,
         x.internalOverrides |+| y.internalOverrides,
+        x.defaultValueOf ++ y.defaultValueOf,
         x.importRefs ++ y.importRefs,
         x.bytecodeCallers |+| y.bytecodeCallers,
         x.jvmMembers |+| y.jvmMembers,
@@ -224,7 +241,8 @@ object References {
           case _ => empty
         }
         // If a symbol is referenced in bytecode, consider it used
-        // This accounts for `given`s summoned by inline methods and macros, which TASTy doesn't record
+        // This accounts for `given`s summoned by inline methods and macros, and default values read by macros, which
+        // TASTy doesn't record
         callers = env.bytecodeCallers(sym)
         usedInBytecode =
           if (callers.nonEmpty) {
@@ -248,6 +266,8 @@ object References {
           case t: TermSymbol if t.isInline && Symbols.isGiven(t) => Map(defSym -> t)
           case _ => Map.empty
         }
+        defaultValueOf <- Symbols.defaultGetterParam(sym)
+          .fold(Map.empty[Sym, Sym].pure[EnvR])((m, _) => Sym.fromSymbol(m).map(ms => Map(defSym -> ms)))
         entryPoints = if (Symbols.isEntryPoint(sym)) Set(defSym) else Set.empty[Sym]
         refs = References(
           Set(defSym),
@@ -257,6 +277,7 @@ object References {
           owners = owners,
           ownerIndependent = ownerIndependent,
           entryPoints = entryPoints,
+          defaultValueOf = defaultValueOf,
         )
       } yield refs |+| overrides |+| usedInBytecode |+| jvmNames) |+| Annotations.checkForUnused(sym)
     )
@@ -276,8 +297,9 @@ object References {
   def inlineCalls(syms: Set[Symbol]): EnvR[References] =
     monoid.empty.copy(inlineCalls = syms.collect { case t: TermSymbol if t.isInline && !t.isTransparentInline => t }).pure[EnvR]
 
-  def usedProxy(m: Map[Symbol, Set[Symbol]]): EnvR[References] = empty.flatMap(_.addUsedProxy(m))
-  def usedProxy(ifUsed: Symbol, thenUsed: Set[Symbol]): EnvR[References] = empty.flatMap(_.addUsedProxy(ifUsed, thenUsed))
+  def usedProxy(m: Map[Symbol, Set[Symbol]])(using ctx: Context): EnvR[References] = empty.flatMap(_.addUsedProxy(m))
+  def usedProxy(ifUsed: Symbol, thenUsed: Set[Symbol])(using ctx: Context): EnvR[References] =
+    empty.flatMap(_.addUsedProxy(ifUsed, thenUsed))
 
   def fromSymbol(
     sym: Symbol,
