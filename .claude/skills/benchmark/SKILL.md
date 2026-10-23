@@ -24,10 +24,9 @@ sbt "core3/compile; export core3/Runtime/fullClasspath" 2>&1 | grep -v '^\[' | t
   `cs fetch org.scala-lang:scala3-compiler_3:3.10.0 > "$SCRATCH/dotty-cp.txt"`.
   Avoid cats as a full-analysis corpus: tasty-query throws `InvalidProgramStructureException` on it, independent of
   find-unused, though the bytecode scan alone works.
-- A real sbt project that's already compiled: sbt writes each project's `Test / fullClasspath` to
-  `<project>/target/streams/test/fullClasspath/_global/streams/export`. Union the last line of those files (split on
-  `:`). Only combine projects compiled with the same Scala version, since mixing versions puts two copies of each
-  class on the classpath. Reading another repo's build output is read-only, but don't run sbt in someone else's
+- A real sbt project that's already compiled: sbt exports each project's `Test / fullClasspath`, and the
+  `validate-on-project` skill's `classpath.py <build root>` writes their union, for sbt 1 or 2. Only combine projects
+  compiled with the same Scala version, since mixing versions puts two copies of each class on the classpath. Reading another repo's build output is read-only, but don't run sbt in someone else's
   working tree to produce it.
 
 ## 3. Run it from a scratch copy
@@ -45,7 +44,8 @@ The first argument is a comma-separated package list, as in `findUnusedPackages`
 ## Reading the results
 
 - Compare the unused counts, not the two analysis timings: the first analysis also warms up the JIT.
-- To measure a change, run once on the base commit and once with the change, and diff `unused-givens.tsv`.
+- To measure a change, run once on the base commit and once with the change, and diff `unused-givens.tsv`. To compare
+  the findings of every mode, use the `validate-on-project` skill's `compare_builds.sh`.
 - `Bytecode.references` takes an optional `threads` argument, to compare pool sizes. On a large closed-source
   application (about ten sbt projects, roughly 10k classes and 250 jars; October 2026, ASM 9.11.1, JDK 25, 18 cores,
   OS file cache warm), cold scans took ~830 ms on 1 thread, ~665 ms on 2, ~585 ms on 3 (the default cap), ~560 ms on
