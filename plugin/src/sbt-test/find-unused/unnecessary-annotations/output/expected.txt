@@ -1,0 +1,21 @@
+Found 3 unused terms
+
+┌────────────────────────────────────┬───────────────────────────────────────────────┐
+│ Instance                           │ Location                                      │
+├────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Base.run                 │ src/main/scala/bl/unused/Annotated.scala:5:18 │
+├────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Annotated.discards       │ src/main/scala/bl/unused/Annotated.scala:26:7 │
+├────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.MoreAnnotated.deadCaller │ src/main/scala/bl/unused/Annotated.scala:63:7 │
+└────────────────────────────────────┴───────────────────────────────────────────────┘
+
+7 `@unused`/`@nowarn` annotations aren't needed, since what they're on is used:
+
+  bl.unused.Annotated.stale  src/main/scala/bl/unused/Annotated.scala:21:15
+  bl.unused.Annotated.staleParam.y  src/main/scala/bl/unused/Annotated.scala:22:40
+  bl.unused.MoreAnnotated.usedVal  src/main/scala/bl/unused/Annotated.scala:50:15
+  bl.unused.MoreAnnotated.UsedObject  src/main/scala/bl/unused/Annotated.scala:51:18
+  bl.unused.MoreAnnotated.lambdaParam.n  src/main/scala/bl/unused/Annotated.scala:52:41
+  bl.unused.MoreAnnotated.withLocals.usedLocal  src/main/scala/bl/unused/Annotated.scala:57:17
+  bl.unused.MoreAnnotated.onlyDeadUse  src/main/scala/bl/unused/Annotated.scala:62:15

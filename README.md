@@ -18,6 +18,7 @@ See below for more details on setup and use.
 - [Exclusions](#exclusions)
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
   - [Exclusions that don't exclude anything](#exclusions-that-dont-exclude-anything)
+  - [Annotations that aren't needed](#annotations-that-arent-needed)
 - [Default values](#default-values)
 - [Auxiliary constructors](#auxiliary-constructors)
 - [Transitive mode](#transitive-mode)
@@ -136,6 +137,24 @@ it matches isn't listed.
 
 The list only holds for the mode that was run: an exclusion that's unnecessary in default mode can still be needed in
 transitive mode, for code that only unused code uses. It doesn't change the exit code.
+
+### Annotations that aren't needed
+
+Code annotated with `@unused`, or with `@nowarn` with a `msg` filter that mentions "unused" or "never used" (but not
+"unused value of type", which is about discarded values), is never reported. `findUnusedAll` also lists the annotations
+that aren't needed because what they're on is referenced anyway, e.g. a `@nowarn("msg=unused")` parameter that the
+method now reads. Being used only through what a definition overrides doesn't count, since the compiler can still warn
+about it then, so an annotation on an override's parameter is never listed, and neither is one on a class parameter, or
+on an `export` forwarder, which copies the annotation from what it forwards to. References from inside what's annotated,
+like a recursive call, don't count either, and neither do the ones find-unused infers for `transparent inline` methods
+and quoted types. Like the compiler, it counts references from code that's itself unused, so the list is the same in
+transitive mode.
+
+The compiler's `-Wunused:nowarn` lists the `@nowarn`s that suppress nothing, and keeping it on stops them from piling
+up. It doesn't warn about every class parameter find-unused reports, e.g. a `using` parameter that only proves
+something about its class's types, so give those `@unused` instead of `@nowarn`, which it would list. Check what it
+lists by recompiling after removing them, too: it can list a `@nowarn` on a class's `using` parameter that the compiler
+does warn about once it's gone; making such a parameter used removes the need for either.
 
 ## Default values
 

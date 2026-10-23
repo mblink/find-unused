@@ -92,6 +92,17 @@ object FindUnusedCli {
     def unapply(s: String): Option[Int] = s.toIntOption
   }
 
+  /** Rows of names and positions, sorted by position and then name, with one row per `rowKey` */
+  private def rows(syms: Set[Sym])(rowKey: Sym => Any): List[(String, String)] =
+    syms.toList
+      .sortBy {
+        case Sym(_, name, Some(SourcePos(file, line, col))) => (file, line, col, name)
+        case Sym(_, name, Some(pos)) => (pos, 0, 0, name)
+        case Sym(_, name, None) => (name, 0, 0, "")
+      }
+      .distinctBy(rowKey)
+      .map(sym => (sym.name, sym.pos.getOrElse("")))
+
   private def withOutputWriter(args: Args, sysOut: => PrintStream)(f: PrintWriter => Unit): Unit =
     args.output match {
       case Some(file) => Using.resource(new FileWriter(new File(file)))(fw => Using.resource(new PrintWriter(fw))(f))
@@ -99,10 +110,11 @@ object FindUnusedCli {
     }
 
   /**
-   * @param checkExclusions whether to report exclusions that don't exclude anything, which only makes sense when every
-   *                        kind of code is analyzed: the explicits and givens runners would flag each other's exclusions
+   * @param listRemovable whether to list exclusions that don't exclude anything, and `@unused`/`@nowarn` annotations
+   *                      that aren't needed, which only makes sense when every kind of code is analyzed: the explicits
+   *                      and givens runners would flag each other's
    */
-  private def run(runner: FindUnused.Runner, args: Args, singularType: String, checkExclusions: Boolean): Unit =
+  private def run(runner: FindUnused.Runner, args: Args, singularType: String, listRemovable: Boolean): Unit =
     Either.catchNonFatal {
       val refs = runner(
         args.debug.value,
@@ -116,24 +128,22 @@ object FindUnusedCli {
         println(s"*********** Result: ${Debug.printer(refs)}")
 
       val isExcluded = refs.excludingDefaultsOf(sym => args.exclusion.exists(_.matches(sym)))
-      val unused =
-        (if (args.transitive.value) refs.computeTransitivelyUnused(isExcluded) else refs.computeUnusedExcluding(isExcluded))
-          .toList
-        .sortBy {
-          case Sym(_, name, Some(SourcePos(file, line, col))) => (file, line, col, name)
-          case Sym(_, name, Some(pos)) => (pos, 0, 0, name)
-          case Sym(_, name, None) => (name, 0, 0, "")
-        }
-        // An `export` can generate several symbols with the same name and position, e.g. a forwarder and a type alias,
-        // but symbols without a position, like overloads, are different
-        .distinctBy(sym => sym.pos.fold(Left(sym.id))(pos => Right((sym.name, pos))))
-        .map(sym => (sym.name, sym.pos.getOrElse("")))
+      // An `export` can generate several symbols with the same name and position, e.g. a forwarder and a type alias,
+      // but symbols without a position, like overloads, are different
+      val unused = rows(
+        if (args.transitive.value) refs.computeTransitivelyUnused(isExcluded) else refs.computeUnusedExcluding(isExcluded)
+      )(sym => sym.pos.fold(Left(sym.id))(pos => Right((sym.name, pos))))
 
       val unneededExclusions =
-        if (checkExclusions && args.exclusion.nonEmpty) {
+        if (listRemovable && args.exclusion.nonEmpty) {
           val reportable = refs.unusedWithoutExclusions(args.transitive.value)
           args.exclusion.filterNot(e => reportable.exists(refs.excludingDefaultsOf(e.matches)))
         } else Nil
+
+      // An annotation is listed once, even if several symbols at its position carry it
+      val unnecessaryAnnotations =
+        if (listRemovable) rows(refs.unnecessaryUnusedAnnotations)(sym => sym.pos.fold(Left(sym.id))(Right(_)))
+        else Nil
 
       val hasUnused = unused.lengthIs > 0
 
@@ -223,14 +233,24 @@ object FindUnusedCli {
           args.output.fold(writer.println("\n"))(_ => ())
         }
 
-        if (unneededExclusions.nonEmpty) {
-          val exclusionsHeader =
-            if (unneededExclusions.lengthIs == 1) "1 exclusion doesn't exclude anything and can be removed:"
-            else s"${unneededExclusions.length} exclusions don't exclude anything and can be removed:"
-          writer.println("\n" ++ (if (useColors) yellow(bold(exclusionsHeader)) else exclusionsHeader) ++ "\n")
-          unneededExclusions.foreach(e => writer.println(s"  $e"))
-          args.output.fold(writer.println(""))(_ => ())
-        }
+        // A list of things that can be removed, after the results
+        def printRemovable(lines: Seq[String], header: String): Unit =
+          if (lines.nonEmpty) {
+            writer.println("\n" ++ (if (useColors) yellow(bold(header)) else header) ++ "\n")
+            lines.foreach(l => writer.println(s"  $l"))
+            args.output.fold(writer.println(""))(_ => ())
+          }
+
+        printRemovable(
+          unneededExclusions.map(_.toString),
+          if (unneededExclusions.lengthIs == 1) "1 exclusion doesn't exclude anything and can be removed:"
+          else s"${unneededExclusions.length} exclusions don't exclude anything and can be removed:",
+        )
+        printRemovable(
+          unnecessaryAnnotations.map((name, pos) => s"$name  $pos"),
+          if (unnecessaryAnnotations.lengthIs == 1) "1 `@unused`/`@nowarn` annotation isn't needed, since what it's on is used:"
+          else s"${unnecessaryAnnotations.length} `@unused`/`@nowarn` annotations aren't needed, since what they're on is used:",
+        )
 
         writer.flush
       }
@@ -252,12 +272,12 @@ object FindUnusedCli {
     if (args.transitive.value) {
       System.err.println(red("--transitive needs the `all` command, which analyzes givens and explicits together"))
       System.exit(1)
-    } else run(runner, args, singularType, checkExclusions = false)
+    } else run(runner, args, singularType, listRemovable = false)
 
   @main def explicits(args: Args): Unit = oneKind(FindUnused.explicits, args, "explicit")
   @main def givens(args: Args): Unit = oneKind(FindUnused.givens, args, "given")
   @main def implicits(args: Args): Unit = oneKind(FindUnused.givens, args, "implicit")
-  @main def all(args: Args): Unit = run(FindUnused.all, args, "term", checkExclusions = true)
+  @main def all(args: Args): Unit = run(FindUnused.all, args, "term", listRemovable = true)
 
   def main(args: Array[String]): Unit =
     ParserForMethods(this).runEither(args.toSeq).fold(
