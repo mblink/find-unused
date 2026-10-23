@@ -1,1 +1,13 @@
-No unused terms found
+Found 1 unused term
+
+┌───────────────────────────┬──────────────────────────────────────────┐
+│ Instance                  │ Location                                 │
+├───────────────────────────┼──────────────────────────────────────────┤
+│ bl.unused.Kept.deadCaller │ a/src/main/scala/bondlink/Kept.scala:4:7 │
+└───────────────────────────┴──────────────────────────────────────────┘
+
+3 exclusions don't exclude anything and can be removed:
+
+  sym=^\Qbl.unused.Show.str\E$
+  sym=^\Qbl.unused.Removed\E$
+  sym=^\Qbl.unused.Kept.helper\E$

@@ -1,0 +1,6 @@
+# Listing exclusions that don't exclude anything doesn't fail the run when nothing is unused
+> findUnusedAll
+$ must-mirror output/expected.txt output/actual.txt
+> set Global / findUnusedTransitive := true
+> findUnusedAll
+$ must-mirror output/expected.txt output/actual.txt

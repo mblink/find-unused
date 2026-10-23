@@ -17,6 +17,7 @@ object FindUnusedCli {
   private def bold(s: String): String = AnsiColor.BOLD ++ s ++ AnsiColor.RESET
   private def green(s: String): String = AnsiColor.GREEN ++ s ++ AnsiColor.RESET
   private def red(s: String): String = AnsiColor.RED ++ s ++ AnsiColor.RESET
+  private def yellow(s: String): String = AnsiColor.YELLOW ++ s ++ AnsiColor.RESET
 
   @main
   def help(): Unit = println(parser.helpText())
@@ -45,6 +46,8 @@ object FindUnusedCli {
 
     def matches(sym: Sym): Boolean =
       srcMatches(sym.pos) && symMatches(sym.name)
+
+    override def toString: String = (src.map("src=" ++ _.regex).toList ++ sym.map("sym=" ++ _.regex)).mkString("&")
   }
 
   object Exclusion {
@@ -94,7 +97,11 @@ object FindUnusedCli {
       case None => Using.resource(new PrintWriter(sysOut))(f)
     }
 
-  private def run(runner: FindUnused.Runner, args: Args, singularType: String): Unit =
+  /**
+   * @param checkExclusions whether to report exclusions that don't exclude anything, which only makes sense when every
+   *                        kind of code is analyzed: the explicits and givens runners would flag each other's exclusions
+   */
+  private def run(runner: FindUnused.Runner, args: Args, singularType: String, checkExclusions: Boolean): Unit =
     Either.catchNonFatal {
       val refs = runner(
         args.debug.value,
@@ -116,6 +123,12 @@ object FindUnusedCli {
           case Sym(_, name, None) => (name, 0, 0, "")
         }
         .map(sym => (sym.name, sym.pos.getOrElse("")))
+
+      val unneededExclusions =
+        if (checkExclusions && args.exclusion.nonEmpty) {
+          val reportable = refs.unusedWithoutExclusions(args.transitive.value)
+          args.exclusion.filterNot(e => reportable.exists(refs.excludingDefaultsOf(e.matches)))
+        } else Nil
 
       val hasUnused = unused.lengthIs > 0
 
@@ -205,6 +218,15 @@ object FindUnusedCli {
           args.output.fold(writer.println("\n"))(_ => ())
         }
 
+        if (unneededExclusions.nonEmpty) {
+          val exclusionsHeader =
+            if (unneededExclusions.lengthIs == 1) "1 exclusion doesn't exclude anything and can be removed:"
+            else s"${unneededExclusions.length} exclusions don't exclude anything and can be removed:"
+          writer.println("\n" ++ (if (useColors) yellow(bold(exclusionsHeader)) else exclusionsHeader) ++ "\n")
+          unneededExclusions.foreach(e => writer.println(s"  $e"))
+          args.output.fold(writer.println(""))(_ => ())
+        }
+
         writer.flush
       }
 
@@ -225,12 +247,12 @@ object FindUnusedCli {
     if (args.transitive.value) {
       System.err.println(red("--transitive needs the `all` command, which analyzes givens and explicits together"))
       System.exit(1)
-    } else run(runner, args, singularType)
+    } else run(runner, args, singularType, checkExclusions = false)
 
   @main def explicits(args: Args): Unit = oneKind(FindUnused.explicits, args, "explicit")
   @main def givens(args: Args): Unit = oneKind(FindUnused.givens, args, "given")
   @main def implicits(args: Args): Unit = oneKind(FindUnused.givens, args, "implicit")
-  @main def all(args: Args): Unit = run(FindUnused.all, args, "term")
+  @main def all(args: Args): Unit = run(FindUnused.all, args, "term", checkExclusions = true)
 
   def main(args: Array[String]): Unit =
     ParserForMethods(this).runEither(args.toSeq).fold(
