@@ -12,8 +12,10 @@ case class Env(
   packages: Seq[String],
   isInPackages: Symbol => Boolean,
   symbolIsValid: Symbol => Boolean,
-  // Whether a symbol is referenced in bytecode in a way that TASTy can't see, see `Bytecode`
-  usedInBytecode: Symbol => Boolean,
+  // The classes and methods that reference a symbol in bytecode in a way that TASTy can't see, see `Bytecode`
+  bytecodeCallers: Symbol => Set[Bytecode.Caller],
+  // The definitions enclosing the tree being traversed, innermost first, so references can be attributed to them
+  enclosing: List[Symbol] = Nil,
 )
 
 // The symbols themselves rather than their hash codes, because `Symbol` doesn't override `hashCode`, so different

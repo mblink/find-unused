@@ -9,7 +9,6 @@ import mainargs.{arg, main, Flag, ParserForClass, ParserForMethods, TokensReader
 import org.jline.terminal.TerminalBuilder
 import scala.io.AnsiColor
 import scala.util.Using
-import scala.util.chaining.*
 import scala.util.matching.Regex
 
 object FindUnusedCli {
@@ -70,6 +69,7 @@ object FindUnusedCli {
   @main
   case class Args(
     @arg(doc = "Enable debug logging") debug: Flag,
+    @arg(doc = "Also report code that's only used by unused code") transitive: Flag,
     @arg(short = 'd', doc = "Root directory of project") rootDirectory: Option[String],
     @arg(short = 'p', doc = "Packages to analyze") `package`: Seq[String],
     @arg(short = 'c', doc = "Classpath") classpath: Seq[String],
@@ -105,14 +105,10 @@ object FindUnusedCli {
       if (args.debug.value)
         println(s"*********** Result: ${Debug.printer(refs)}")
 
-      val unused = refs.computeUnused
-        .pipe(l =>
-          if (args.exclusion.nonEmpty)
-            l.filterNot(sym => args.exclusion.exists(_.matches(sym)))
-          else
-            l
-        )
-        .toList
+      val isExcluded = (sym: Sym) => args.exclusion.exists(_.matches(sym))
+      val unused =
+        (if (args.transitive.value) refs.computeTransitivelyUnused(isExcluded) else refs.computeUnused.filterNot(isExcluded))
+          .toList
         .sortBy {
           case Sym(_, name, Some(SourcePos(file, line, col))) => (file, line, col, name)
           case Sym(_, name, Some(pos)) => (pos, 0, 0, name)
@@ -222,9 +218,17 @@ object FindUnusedCli {
       System.exit(1)
     }
 
-  @main def explicits(args: Args): Unit = run(FindUnused.explicits, args, "explicit")
-  @main def givens(args: Args): Unit = run(FindUnused.givens, args, "given")
-  @main def implicits(args: Args): Unit = run(FindUnused.givens, args, "implicit")
+  // Transitive mode follows references through every kind of code, which the explicits and givens runners each skip
+  // half of, so it would report code that's used
+  private def oneKind(runner: FindUnused.Runner, args: Args, singularType: String): Unit =
+    if (args.transitive.value) {
+      System.err.println(red("--transitive needs the `all` command, which analyzes givens and explicits together"))
+      System.exit(1)
+    } else run(runner, args, singularType)
+
+  @main def explicits(args: Args): Unit = oneKind(FindUnused.explicits, args, "explicit")
+  @main def givens(args: Args): Unit = oneKind(FindUnused.givens, args, "given")
+  @main def implicits(args: Args): Unit = oneKind(FindUnused.givens, args, "implicit")
   @main def all(args: Args): Unit = run(FindUnused.all, args, "term")
 
   def main(args: Array[String]): Unit =
