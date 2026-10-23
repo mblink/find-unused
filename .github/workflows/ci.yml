@@ -69,6 +69,9 @@ jobs:
       - name: scripted
         run: sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} 'test; scripted'
 
+      - name: Check skill scripts
+        run: python3 .claude/skills/validate-on-project/test_scripts.py
+
       - name: Build CLI
         if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && matrix.scriptedScala == '3.10.0' && github.event_name == 'push'
         env:
