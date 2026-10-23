@@ -71,9 +71,11 @@ object Annotations {
     val paramAccessorSyms = Symbols.constructorParamToParamAccessors(sym)
     // If the symbol is a param accessor, attempt to find the corresponding constructor param in the class
     val ctorParamSym = Symbols.paramAccessorToConstructorParam(sym)
+    // If the symbol is a default getter, its parameter's annotations apply to it
+    val defaultParamSym = Symbols.defaultGetterParam(sym).map(_._2)
 
     // Check all relevant symbols for unused annotations
-    val allSyms = (Set(sym) ++ paramAccessorSyms ++ ctorParamSym).toList
+    val allSyms = (Set(sym) ++ paramAccessorSyms ++ ctorParamSym ++ defaultParamSym).toList
     val hasUnusedAnnotation = allSyms.exists(_.annotations.exists(isUnusedAnnotation))
 
     allSyms.foldMap(s => Trees.within(s)(s.annotations.foldMap(a => Trees.references(a.tree)))) |+| (

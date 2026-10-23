@@ -32,9 +32,16 @@ object Symbols {
 
   def isConstructor(sym: Symbol): Boolean = sym.name == nme.Constructor
 
+  /**
+   * Whether `sym` is a class's primary constructor, which is used whenever its class is. Auxiliary constructors
+   * (`def this(...)`) are reported like methods. Without a tree to tell them apart, every constructor counts as primary.
+   */
+  def isPrimaryConstructor(sym: Symbol): Boolean =
+    isConstructor(sym) && Option(sym.owner).collect { case c: ClassSymbol => c }.flatMap(_.tree).forall(_.rhs.constr.symbol == sym)
+
   def constructorParamToParamAccessors(ctorParam: Symbol)(using ctx: Context): Set[Symbol] =
     Option(ctorParam.owner)
-      .collect { case t: TermSymbol if Symbols.isConstructor(t) => t } // t is the class constructor
+      .collect { case t: TermSymbol if Symbols.isPrimaryConstructor(t) => t } // t is the class constructor
       .flatMap(t => Option(t.owner))
       .collect { case c: ClassSymbol => c } // c is the class
       .fold(Set())(c => c.getDecl(ctorParam.name).toSet ++ c.getMember(ctorParam.name).toSet) // getDecl/getMember find the param accessors
@@ -44,7 +51,7 @@ object Symbols {
       .collect { case t: TermSymbol if t.isParamAccessor => t }
       .flatMap(t => Option(t.owner))
       .collect { case c: ClassSymbol => c } // c is the parent class
-      .flatMap(_.declarations.find(Symbols.isConstructor))
+      .flatMap(_.declarations.find(Symbols.isPrimaryConstructor))
       .collect { case t: TermSymbol => t.tree } // t is the class constructor
       .flatten
       .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
@@ -52,6 +59,13 @@ object Symbols {
 
   def isDefaultParam(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isParamWithDefault }.getOrElse(false)
+
+  /** A method that computes a parameter's default value, e.g. `foo$default$2` for the second parameter of `foo` */
+  def isDefaultGetter(sym: Symbol): Boolean =
+    sym.name match {
+      case _: DefaultGetterName => true
+      case _ => false
+    }
 
   def isGiven(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
@@ -68,6 +82,42 @@ object Symbols {
       case Some(owner: TermOrTypeSymbol) => s"${name(owner)}.${sym.name}"
       case None => sym.displayFullName
     }).replace("$.", ".").stripSuffix("$")
+
+  /**
+   * The parameter whose default value a default getter computes, with its method, or its class for a constructor
+   * parameter
+   */
+  def defaultGetterParam(sym: Symbol)(using ctx: Context): Option[(TermOrTypeSymbol, TermSymbol)] =
+    (sym.name, Option(sym.owner)) match {
+      case (DefaultGetterName(method, index), Some(owner: ClassSymbol)) =>
+        // A constructor's default getters are in its class's companion
+        val methods: List[(TermOrTypeSymbol, TermSymbol)] =
+          if (method == nme.Constructor)
+            // A primary constructor's defaults belong to its class, and an auxiliary constructor's to itself
+            owner.companionClass.toList.flatMap(c => c.getAllOverloadedDecls(method).map(d => (if (isPrimaryConstructor(d)) c else d) -> d))
+          else owner.getAllOverloadedDecls(method).map(m => m -> m)
+        // Only one overload of a method can have default values
+        methods.iterator
+          .map((m, decl) => (m, decl.paramSymss.flatMap(_.left.toOption.toList.flatten).lift(index)))
+          .collectFirst { case (m, Some(p)) if p.isParamWithDefault => (m, p) }
+      case _ => None
+    }
+
+  /**
+   * Whether `sym` is a default getter that's reported: not the forwarder an `export` generates for one, which can't
+   * be removed on its own, not one of a local method, which has no name to report it under, and not one of a local
+   * class, whose JVM name the bytecode scan can't predict, so it couldn't see a macro reading it.
+   */
+  def isReportedDefaultGetter(sym: Symbol)(using ctx: Context): Boolean =
+    isDefaultGetter(sym) && !Some(sym).collect { case t: TermSymbol => t.isExport }.getOrElse(false) &&
+      defaultGetterParam(sym).nonEmpty && Bytecode.memberKey(sym).nonEmpty
+
+  /**
+   * The name a symbol is reported under. That's `name`, except for default getters: the default value of `bar` in
+   * `def foo(bar: Int = 1)` is `foo(bar = ...)`, and in `class Foo(bar: Int = 1)` it's `Foo(bar = ...)`.
+   */
+  def displayName(sym: Symbol)(using ctx: Context): String =
+    defaultGetterParam(sym).fold(name(sym))((method, param) => s"${name(method)}(${param.name} = ...)")
 
   def allMatchingSymbols(sym: Symbol)(using ctx: Context): List[Symbol] =
     Option(sym.owner).fold(Nil) {
@@ -380,12 +430,6 @@ object Symbols {
       )
     }
 
-  // A method that computes a parameter's default value, like `foo$default$2`
-  private def isDefaultGetter(sym: Symbol): Boolean =
-    sym.name match {
-      case _: DefaultGetterName => true
-      case _ => false
-    }
 
   // A wildcard (`_`) or tuple-destructuring parameter
   private def isIgnoredParam(sym: Symbol): Boolean =
@@ -435,15 +479,15 @@ object Symbols {
     }
 
   /**
-   * Whether `sym` is one of the definitions the analysis reports on. Not compiler-generated code, constructors (used
-   * whenever their class is), parameters with default values, the class that runs a `@main` method, module vals (an
-   * `object` is reported as its class), wildcard parameters, default getters and their parameters, or refinement classes
-   * and their members.
+   * Whether `sym` is one of the definitions the analysis reports on. Not compiler-generated code, primary constructors
+   * (used whenever their class is), the class that runs a `@main` method, module vals (an `object` is reported as its
+   * class), wildcard parameters, the parameters of default getters (which repeat their method's), refinement classes and
+   * their members, or the default getters `isReportedDefaultGetter` leaves out.
    */
   def isDefinition(env: Env, sym: Symbol)(using ctx: Context): Boolean =
-    env.symbolIsValid(sym) && !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym) &&
-      !isDefaultParam(sym) && !isMainWrapper(sym) && (sym match {
-        case t: TermSymbol => !t.isModuleVal && !isIgnoredParam(t) && !isDefaultGetter(t) && !Option(t.owner).exists(isDefaultGetter)
+    env.symbolIsValid(sym) && !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isPrimaryConstructor(sym) &&
+      !isMainWrapper(sym) && (!isDefaultGetter(sym) || isReportedDefaultGetter(sym)) && (sym match {
+        case t: TermSymbol => !t.isModuleVal && !isIgnoredParam(t) && !Option(t.owner).exists(isDefaultGetter)
         case c: ClassSymbol => !c.isRefinementClass
         case t: TypeMemberSymbol => !Option(t.owner).exists(isRefinementClass)
         case _ => false

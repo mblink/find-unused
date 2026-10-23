@@ -55,7 +55,8 @@ object FindUnusedCli {
           strs match {
             case Seq(arg) =>
               arg.split('&').toList.foldLeftM(Exclusion(None, None))((acc, filter) =>
-                filter.split('=') match {
+                // Only the first `=` separates the filter's name, since the regex can contain more
+                filter.split("=", 2) match {
                   case Array("src", src) => acc.copy(src = Some(src.r)).asRight[String]
                   case Array("sym", sym) => acc.copy(sym = Some(sym.r)).asRight[String]
                   case _ => s"Invalid exclusion filter: $filter".asLeft[Exclusion]
@@ -105,7 +106,7 @@ object FindUnusedCli {
       if (args.debug.value)
         println(s"*********** Result: ${Debug.printer(refs)}")
 
-      val isExcluded = (sym: Sym) => args.exclusion.exists(_.matches(sym))
+      val isExcluded = refs.excludingDefaultsOf(sym => args.exclusion.exists(_.matches(sym)))
       val unused =
         (if (args.transitive.value) refs.computeTransitivelyUnused(isExcluded) else refs.computeUnused.filterNot(isExcluded))
           .toList

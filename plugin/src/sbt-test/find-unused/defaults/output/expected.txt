@@ -1,0 +1,27 @@
+Found 11 unused explicits
+
+┌────────────────────────────────────────┬───────────────────────────────────────────────┐
+│ Instance                               │ Location                                      │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Config(timeout = ...)        │ app/src/main/scala/bl/unused/Main.scala:4:51  │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Client(port = ...)           │ app/src/main/scala/bl/unused/Main.scala:10:50 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Holder.unread                │ app/src/main/scala/bl/unused/Main.scala:22:37 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.NeverCreated                 │ app/src/main/scala/bl/unused/Main.scala:25:7  │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.NeverCreated.<init>.value    │ app/src/main/scala/bl/unused/Main.scala:25:24 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.NeverCreated.value           │ app/src/main/scala/bl/unused/Main.scala:25:24 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.NeverCalled.run              │ app/src/main/scala/bl/unused/Main.scala:28:7  │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Main.neverDefaulted(b = ...) │ app/src/main/scala/bl/unused/Main.scala:33:30 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Sized.size(scale = ...)      │ app/src/main/scala/bl/unused/Main.scala:51:12 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Lists.curried(b = ...)       │ app/src/main/scala/bl/unused/Main.scala:60:23 │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ bl.unused.Lists.padded(width = ...)    │ app/src/main/scala/bl/unused/Main.scala:63:16 │
+└────────────────────────────────────────┴───────────────────────────────────────────────┘
