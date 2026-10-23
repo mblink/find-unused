@@ -6,11 +6,18 @@ import java.nio.file.{Files, FileSystems, Path}
 import scala.jdk.CollectionConverters.*
 import tastyquery.Contexts.Context
 import tastyquery.jdk.ClasspathLoaders
-import tastyquery.Symbols.{ClassSymbol, Symbol, TermSymbol}
+import tastyquery.Symbols.{ClassSymbol, PackageSymbol, Symbol, TermSymbol}
 
 object FindUnused {
   class Runner(symbolIsValid: Symbol => Boolean) {
-    final def apply(debug: Boolean, rootDirectory: Option[Path], packages: Seq[String], classpath: Seq[Path]): References = {
+    /** @param inlineGivenRecords the directories find-unused's compiler plugin wrote to, see `InlineGivenRecords` */
+    final def apply(
+      debug: Boolean,
+      rootDirectory: Option[Path],
+      packages: Seq[String],
+      classpath: Seq[Path],
+      inlineGivenRecords: Seq[Path] = Nil,
+    ): References = {
       println("[find-unused] Initializing classpath")
 
       val javaModules = Files.list(FileSystems.getFileSystem(URI.create("jrt:/")).getPath("modules")).iterator.asScala.toList
@@ -46,11 +53,45 @@ object FindUnused {
         println(s"[find-unused] Analyzing package $p")
         Symbols.references(ctx.findPackage(p)).run(env, SeenSymbols.empty)._2
       }
-      markPossiblySummonedInlineGivens(
-        if (refs.bytecodeCallers.isEmpty) refs else refs.attributeBytecodeCallers(bytecodeRefs.outers),
-        debug,
-      )
+      val withBytecode = if (refs.bytecodeCallers.isEmpty) refs else refs.attributeBytecodeCallers(bytecodeRefs.outers)
+      if (withBytecode.inlineGivens.isEmpty) withBytecode
+      else if (inlineGivenRecords.isEmpty) markPossiblySummonedInlineGivens(withBytecode, debug)
+      else
+        InlineGivenRecords(inlineGivenRecords, pkgSyms.toList.flatMap(topLevelClasses).flatMap(tastyName).toSet) match {
+          case Right(records) => markRecordedInlineGivens(withBytecode, records)
+          case Left(missing) =>
+            val classes = missing.toList.sorted.map(_.replace('/', '.')) match {
+              case c :: Nil => s"$c wasn't"
+              case cs => s"${cs.length} classes, like ${cs.head}, weren't"
+            }
+            println(s"[find-unused] $classes compiled with find-unused's compiler plugin, so inline givens are checked conservatively")
+            markPossiblySummonedInlineGivens(withBytecode, debug)
+        }
     }
+  }
+
+  private def topLevelClasses(pkg: PackageSymbol)(using ctx: Context): List[ClassSymbol] =
+    pkg.declarations.flatMap {
+      case c: ClassSymbol => List(c)
+      case p: PackageSymbol => topLevelClasses(p)
+      case _ => Nil
+    }
+
+  // The path of the TASTy file a top-level class is in, if it has one, without the extension
+  private def tastyName(cls: ClassSymbol): Option[String] =
+    cls.tree.flatMap(_ => Bytecode.internalClassName(cls)).map(_.stripSuffix("$"))
+
+  /** Consider `inline given`s used by the definitions find-unused's compiler plugin recorded expanding them */
+  def markRecordedInlineGivens(refs: References, records: Map[String, Set[String]]): References = {
+    val byName = refs.defined.groupBy(_.name)
+    // The definition a name is in: a lambda or a local value that isn't analyzed is part of the definition around it
+    def definitions(name: String): Set[Sym] =
+      Iterator.iterate(name)(n => n.take(math.max(n.lastIndexOf('.'), 0))).takeWhile(_.nonEmpty)
+        .map(byName.getOrElse(_, Set.empty)).find(_.nonEmpty).getOrElse(Set.empty)
+
+    refs.usedFromSources(refs.inlineGivens.flatMap((sym, inlineGiven) =>
+      records.get(Symbols.name(inlineGiven)).map(names => sym -> names.toList.map(definitions))
+    ))
   }
 
   /** Consider `inline given`s used if an implicit search after TASTy is pickled might find them, see `InlineSummons` */

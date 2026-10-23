@@ -194,7 +194,13 @@ lazy val skills = sbt.internal.ProjectMatrix("skills", file(".claude/skills"))
   )
   .dependsOn(core)
 
+// Compiled with the oldest Scala version find-unused supports, so it runs in each newer compiler
+lazy val compilerPlugin = baseProj("compiler-plugin", "find-unused-compiler-plugin", Seq(scala3ForSbt))
+  .settings(publishSettings)
+  .settings(libraryDependencies += "org.scala-lang" %% "scala3-compiler" % scalaVersion.value % Provided)
+
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
+lazy val compilerPluginJar = taskKey[File]("Compiler plugin jar")
 
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
@@ -221,7 +227,8 @@ lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3For
       else Seq()
     ),
     cliClasspath := (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(_.data),
-    buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
+    compilerPluginJar := (compilerPlugin.jvm(scala3ForSbt) / Compile / packageBin).value,
+    buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath), BuildInfoKey(compilerPluginJar)),
     buildInfoPackage := "bl.unused",
   )
   .enablePlugins(SbtPlugin, BuildInfoPlugin)
