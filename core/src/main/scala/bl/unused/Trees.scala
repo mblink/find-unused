@@ -84,10 +84,10 @@ object Trees {
   // Checks the name before resolving the symbol, since this runs for every `TypeApply`
   private def isTypeOf(fun: TermTree)(using ctx: Context): Boolean =
     (fun match {
-      case i: Ident if i.name == ofName => Symbols.getFromIdent(i)
-      case s: Select if unsigned(s.name) == ofName => Symbols.getFromSelect(s)
-      case _ => Set.empty
-    }).exists(Symbols.name(_) == "scala.quoted.Type.of")
+      case i: Ident => i.name == ofName
+      case s: Select => unsigned(s.name) == ofName
+      case _ => false
+    }) && Symbols.fromTree(fun).exists(Symbols.name(_) == "scala.quoted.Type.of")
 
   /**
    * If these trees or types, which are part of a quote, refer to a method's type parameters, we consider the method's
@@ -142,23 +142,23 @@ object Trees {
     ).foldMap(References.fromSymbol(_, References.used))
   }
 
-  private val transparentInlineDefsCache = mutable.Map.empty[ClassSymbol, List[TermSymbol]]
+  private val transparentInlineDefsCache = Memo[ClassSymbol, List[TermSymbol]]()
 
   // The `transparent inline` methods declared in a class and in the classes and objects nested in it
   private def transparentInlineDefs(cls: ClassSymbol)(using ctx: Context): List[TermSymbol] =
-    transparentInlineDefsCache.synchronized(transparentInlineDefsCache.getOrElseUpdate(cls,
+    transparentInlineDefsCache(cls)(
       cls.declarations.flatMap {
         case t: TermSymbol if t.isTransparentInline => List(t)
         case c: ClassSymbol => transparentInlineDefs(c)
         case _ => Nil
       }
-    ))
+    )
 
-  private val definitionSpansCache = mutable.Map.empty[TermSymbol, Set[(Int, Int)]]
+  private val definitionSpansCache = Memo[TermSymbol, Set[(Int, Int)]]()
 
   // The offsets of every tree in a method's definition
   private def definitionSpans(m: TermSymbol): Set[(Int, Int)] =
-    definitionSpansCache.synchronized(definitionSpansCache.getOrElseUpdate(m, {
+    definitionSpansCache(m) {
       val spans = mutable.Set.empty[(Int, Int)]
       m.tree.foreach(new TreeTraverser {
         override def traverse(tree: Tree): Unit = {
@@ -167,7 +167,7 @@ object Trees {
         }
       }.traverse(_))
       spans.toSet
-    }))
+    }
 
   /**
    * If this `Inlined` tree is the expansion of a `transparent inline` method, we consider the method used.
@@ -197,16 +197,10 @@ object Trees {
 
   // The type arguments of a call to a non-`transparent` inline method, which can pass them on to an implicit search
   private def inlineTypeArgs(fun: TermTree, args: List[TypeTree])(using ctx: Context): EnvR[References] =
-    if (
-      Either.catchNonFatal(fun match {
-        case i: Ident => Symbols.getFromIdent(i)
-        case s: Select => Symbols.getFromSelect(s)
-        case _ => Set.empty
-      }).getOrElse(Set.empty).exists {
-        case t: TermSymbol => t.isInline && !t.isTransparentInline
-        case _ => false
-      }
-    ) References.empty.map(_.copy(inlineTypeArgs = args.flatMap(a => Either.catchNonFatal(a.toType).toOption).toSet))
+    if (Symbols.fromTree(fun).exists {
+      case t: TermSymbol => t.isInline && !t.isTransparentInline
+      case _ => false
+    }) References.empty.map(_.copy(inlineTypeArgs = args.flatMap(a => Either.catchNonFatal(a.toType).toOption).toSet))
     else References.empty
 
   def references(tree: Tree)(using ctx: Context): EnvR[References] =
