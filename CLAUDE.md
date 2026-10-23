@@ -105,6 +105,9 @@ so an implementation in a class that's never instantiated doesn't keep the class
 `Symbols.allOverriddenSymbols` returns what a member overrides in every parent, not just the first match. It ignores
 `importRefs` (imports outside any definition; one inside a definition, e.g. an `inline` method importing `given`s for
 its expansion, is an ordinary reference), and only returns the outermost unused definitions.
+`unusedWithoutExclusions` is what either mode would report with no exclusions, including what's nested in it, and the
+CLI's `all` command lists the exclusions that match none of it. That's exact in default mode, where exclusions only
+filter the result, and conservative in transitive mode, where they're also roots.
 
 **Traversal.** `Symbols.references` dispatches on symbol kind and recurses into declarations; `Trees.references`
 exhaustively matches every tasty-query `Tree` case; `Types.symbols` walks a `Type` to the symbols it mentions.

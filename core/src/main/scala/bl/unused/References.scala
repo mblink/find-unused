@@ -157,6 +157,19 @@ case class References(
    * Only the outermost unused definitions are returned: when an object is unused, so is everything in it.
    */
   final def computeTransitivelyUnused(isExcluded: Sym => Boolean): Set[Sym] = {
+    val unused = transitivelyDead(isExcluded)
+    unused.filterNot(s => owners.get(s).exists(unused.contains) || isDefaultOfUnreported(unused)(s))
+  }
+
+  /**
+   * What would be reported without any exclusions, or is nested in something that would be. An exclusion that matches
+   * none of these doesn't change the output, since what it matches is used anyway, and so is what that uses.
+   */
+  final def unusedWithoutExclusions(transitive: Boolean): Set[Sym] =
+    if (transitive) transitivelyDead(_ => false) else computeUnused
+
+  // Every definition `computeTransitivelyUnused` finds unused, including the ones nested in others
+  private def transitivelyDead(isExcluded: Sym => Boolean): Set[Sym] = {
     val overridesByOwner = (externalOverrides ++ internalOverrides.keys).groupBy(owners.get)
     val overridesByBase = internalOverrides.toList.flatMap((o, bases) => bases.map(_ -> o)).groupMap(_._1)(_._2)
     // An override without an owner that only overrides external code is used no matter what, and one that overrides
@@ -172,8 +185,7 @@ case class References(
         owners.get(s).filterNot(_ => ownerIndependent.contains(s)) ++
         (overridesByOwner.get(Some(s)).iterator.flatten ++ overridesByBase.get(s).iterator.flatten).filter(overrideIsAlive)
     }
-    val unused = defined.filterNot(s => alive.contains(s) || isExcluded(s))
-    unused.filterNot(s => owners.get(s).exists(unused.contains) || isDefaultOfUnreported(unused)(s))
+    defined.filterNot(s => alive.contains(s) || isExcluded(s))
   }
 }
 
