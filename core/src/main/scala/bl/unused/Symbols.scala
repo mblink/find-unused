@@ -90,7 +90,7 @@ object Symbols {
     |  name: ${name(sym)}
     |  raw name: ${sym.name}
     |  raw name pprint: ${Debug.printer(sym.name)}
-    |  hashCode: ${sym.hashCode}
+    |  id: ${Sym.id(sym)}
     |  isExport: ${termSym.fold(false)(_.isExport)}
     |  isSynthetic: ${isSynthetic(sym)}
     |  isConstructor: ${isConstructor(sym)}
