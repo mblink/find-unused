@@ -69,29 +69,56 @@ A few sbt commands are available:
 |`findUnusedImplicits`|An alias for `findUnusedGivens`|
 |`findUnusedAll`|Analyze the configured packages for all types of unused code|
 
+These settings configure them:
+
+|Setting|Description|
+|---|---|
+|`findUnusedPackages`|The top-level packages to analyze|
+|`findUnusedExclusions`|Code to exclude from unused warnings, see [Exclusions](#usage-in-sbt-plugin)|
+|`findUnusedTransitive`|Also report code that's only used by unused code, see [Transitive mode](#transitive-mode)|
+|`findUnusedCompilerPlugin`|Compile Scala 3 projects with the compiler plugin, see [Exact results for `inline given`s](#exact-results-for-inline-givens)|
+|`findUnusedInlineGivenRecords`|Where the compiler plugin records the `inline given`s a project expands; defaults to next to each class directory|
+|`findUnusedOutputFile`|A file to write the output to instead of stdout|
+|`findUnusedUseRootDirectory`|Report code positions relative to the build's root directory (default `true`)|
+|`findUnusedDebug`|Enable debug logging|
+|`findUnusedOnFail`|A callback run with the exit code when a command finds unused code or fails; by default it fails the sbt task|
+
 ### Standalone CLI
 
 You can run the standalone CLI with:
 
 ```bash
-java -jar /path/to/find-unused.jar
+java -jar /path/to/find-unused.jar <command> [options]
 ```
+
+The commands are the same as the sbt plugin's:
+
+|Command|Description|
+|---|---|
+|`explicits`|Analyze for unused explicit (i.e. non-implicit/given/using) code|
+|`givens`|Analyze for unused implicit/given/using code|
+|`implicits`|An alias for `givens`|
+|`all`|Analyze for all types of unused code, and list exclusions and annotations that aren't needed|
 
 There are a couple options you must pass, as well as some optional ones:
 
 |Option|Type|Description|
 |---|---|---|
-|`--package`|Required, repeated|The packages to analyze|
-|`--classpath`|Required, repeated|The full classpath of your code and all dependencies|
-|`--exclusion`|Optional, repeated|Code to exclude from unused warnings, see [Exclusions](#exclusions)|
-|`--root-directory`|Optional|The path to the root of your codebase; used when reporting code positions|
-|`--transitive`|Optional|Also report code that's only used by unused code, see [Transitive mode](#transitive-mode)|
+|`--package`, `-p`|Required, repeated|The packages to analyze|
+|`--classpath`, `-c`|Required, repeated|The full classpath of your code and all dependencies|
+|`--exclusion`, `-e`|Optional, repeated|Code to exclude from unused warnings, see [Exclusions](#exclusions)|
+|`--root-directory`, `-d`|Optional|The path to the root of your codebase; used when reporting code positions|
+|`--transitive`|Optional|Also report code that's only used by unused code (only with `all`), see [Transitive mode](#transitive-mode)|
 |`--inline-given-records`|Optional, repeated|Directories the compiler plugin wrote to, see [Exact results for `inline given`s](#exact-results-for-inline-givens)|
+|`--output`, `-o`|Optional|A file to write the output to instead of stdout|
+|`--width`, `-w`|Optional|The terminal width to render the table for|
+|`--no-color`|Optional|Disable color output|
+|`--debug`|Optional|Enable debug logging|
 
 #### Example usage
 
 ```bash
-java -jar /path/to/find-unused.jar \
+java -jar /path/to/find-unused.jar all \
   --root-directory /path/to/your/code \
   --package com.example.foo \
   --package com.example.bar \
