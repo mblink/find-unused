@@ -102,7 +102,7 @@ jobs:
         scala: [3.10.0]
         java: [temurin@17, temurin@25]
         scriptedScala: [3.8.4, 3.9.0, 3.10.0]
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2]
         exclude:
           - java: temurin@17
             scriptedScala: 3.8.4
@@ -136,7 +136,7 @@ jobs:
 
       - name: scripted
         run: |
-          tests=$(ls plugin/src/sbt-test/find-unused | sort | awk -v shard=${{ matrix.shard }} -v shards=6 '(NR - 1) % shards == shard' | sed 's#^#find-unused/#' | tr '\n' ' ')
+          tests=$(ls plugin/src/sbt-test/find-unused | sort | awk -v shard=${{ matrix.shard }} -v shards=3 '(NR - 1) % shards == shard' | sed 's#^#find-unused/#' | tr '\n' ' ')
           echo "Running: $tests"
           sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} "scripted $tests"
 

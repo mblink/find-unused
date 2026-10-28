@@ -48,7 +48,7 @@ def isScala(v: String) = s"matrix.scala == '$v'"
 val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && github.event_name == 'push'"
 
 // The scripted tests are split across this many runners, each running every `scriptedShards`th test
-val scriptedShards = 6
+val scriptedShards = 3
 val scriptedShardNames = (0 until scriptedShards).map(_.toString).toList
 
 ThisBuild / githubWorkflowBuild := Seq(
