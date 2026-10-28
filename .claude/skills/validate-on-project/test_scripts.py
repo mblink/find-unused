@@ -138,4 +138,9 @@ with tempfile.TemporaryDirectory() as d:
     with open(path, encoding="utf-8") as f:
         check("resolve_conflicts.py with diff3 markers", f.read(), "x\n")
 
+# `remove-unused-code` bundles copies of these so users can copy that one folder into their own project
+for name in ("CompareBytecode.scala", "table2tsv.py", "remove_defaults.py"):
+    with open(os.path.join(HERE, name), "rb") as a, open(os.path.join(HERE, "..", "remove-unused-code", name), "rb") as b:
+        check(f"remove-unused-code/{name} matches validate-on-project/{name}", b.read() == a.read(), True)
+
 print("ok")

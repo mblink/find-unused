@@ -18,7 +18,7 @@ sbt findUnusedAll
 
 It fails when it finds anything. To capture the table, set `Global / findUnusedOutputFile := Some(file(...))` in a
 local, uncommitted `.sbt` file named to sort after `build.sbt` (e.g. `zz-local.sbt`) so it overrides the build's
-setting. `../validate-on-project/table2tsv.py` turns the table into `name<TAB>location` lines. With an output file
+setting. `table2tsv.py` (in this folder) turns the table into `name<TAB>location` lines. With an output file
 set, find-unused's `[find-unused] ...` progress lines are lost, so leave it unset when you need them.
 
 Exclusions live in `findUnusedExclusions`. Only exclude what's genuinely unused in Scala but must stay: generated
@@ -30,7 +30,7 @@ also keeps the objects and classes around what it matches.
 ## Before deleting anything it reports
 
 1. **Delete it and compile everything** (`sbt Test/compile`). A compile error means it's used: restore it and treat it
-   as a find-unused bug (see `diagnose-false-positive`) rather than adding an exclusion.
+   as a find-unused bug (report it at github.com/mblink/find-unused/issues) rather than adding an exclusion.
 2. **Check nothing outside Scala reads it.** Values generated into TypeScript, JSON schemas, templates or reflection
    configs aren't checked by the Scala compiler. Search those sources by name; if one reads it, exclude it.
 3. **Check that behavior is unchanged.** Removing a given nothing selected can still change implicit resolution
@@ -44,7 +44,7 @@ also keeps the objects and classes around what it matches.
    ```
 
    (Adjust the `find` patterns for sbt 2, whose output directories differ, or other build tools.) After recompiling,
-   copy `../validate-on-project/CompareBytecode.scala` to `$SCRATCH` (scala-cli writes `.scala-build/` next to it) and run
+   copy `CompareBytecode.scala` (in this folder) to `$SCRATCH` (scala-cli writes `.scala-build/` next to it) and run
 
    ```bash
    scala-cli run CompareBytecode.scala -- "$SCRATCH/before" <repo root> "$SCRATCH/dirs.txt"
@@ -65,7 +65,7 @@ also keeps the objects and classes around what it matches.
 
 To remove a derived instance, drop just that type class from the `derives` clause (and the whole clause if it was the
 only one). A finding like `Foo.bar(baz = ...)` is a default value no call uses: remove just the ` = ...`
-(`../validate-on-project/remove_defaults.py` does this in bulk). Macros that read defaults show up in the bytecode, so
+(`remove_defaults.py` does this in bulk). Macros that read defaults show up in the bytecode, so
 find-unused doesn't report those.
 
 ## Unused on purpose
