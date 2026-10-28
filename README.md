@@ -17,9 +17,15 @@ See below for more details on setup and use.
     - [Example usage](#example-usage)
 - [Exclusions](#exclusions)
   - [Usage in sbt plugin](#usage-in-sbt-plugin)
+  - [Exclusions that don't exclude anything](#exclusions-that-dont-exclude-anything)
+  - [Annotations that aren't needed](#annotations-that-arent-needed)
+- [Default values](#default-values)
+- [Auxiliary constructors](#auxiliary-constructors)
+- [Transitive mode](#transitive-mode)
 - [Known issues](#known-issues)
-  - [`given`s/`implicit`s summoned with `inline`/macro methods](#givensimplicits-summoned-with-inlinemacro-methods)
-  - [`transparent inline` methods](#transparent-inline-methods)
+  - [`given`s summoned with `inline`/macro methods](#givens-summoned-with-inlinemacro-methods)
+    - [Exact results for `inline given`s](#exact-results-for-inline-givens)
+  - [`transparent inline` methods that reduce to a constant](#transparent-inline-methods-that-reduce-to-a-constant)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
 - [Debugging](#debugging)
 
@@ -79,6 +85,8 @@ There are a couple options you must pass, as well as some optional ones:
 |`--classpath`|Required, repeated|The full classpath of your code and all dependencies|
 |`--exclusion`|Optional, repeated|Code to exclude from unused warnings, see [Exclusions](#exclusions)|
 |`--root-directory`|Optional|The path to the root of your codebase; used when reporting code positions|
+|`--transitive`|Optional|Also report code that's only used by unused code, see [Transitive mode](#transitive-mode)|
+|`--inline-given-records`|Optional, repeated|Directories the compiler plugin wrote to, see [Exact results for `inline given`s](#exact-results-for-inline-givens)|
 
 #### Example usage
 
@@ -102,6 +110,9 @@ You may wish to exclude some code from being reported as unused. The tool suppor
 |`src`|Exclude all code in files that match the given regex|
 |`sym`|Exclude all code whose symbols match the given regex|
 
+Code that's only used by reflection needs one: `classOf[Foo.type]` counts as a use of `object Foo`, but looking it up
+by name with `Class.forName("Foo$")` doesn't.
+
 ### Usage in sbt plugin
 
 You can define exclusions using the `findUnusedExclusions` setting:
@@ -114,9 +125,83 @@ Global / findUnusedExclusions := Seq(
 )
 ```
 
+### Exclusions that don't exclude anything
+
+`findUnusedAll` (or the CLI's `all` command) lists the exclusions that don't exclude anything after its results, so
+they can be removed: ones that match nothing that would be reported without them, e.g. because the code they match was
+deleted or is used now. `findUnusedExplicits` and `findUnusedGivens` don't, since each one only sees one kind of code,
+and would list the exclusions for the other. An exclusion with several alternatives in one regex is only listed when
+none of them excludes anything. In [transitive mode](#transitive-mode), an exclusion is only listed if what it matches
+is used without any exclusions, so one that's only unnecessary because another exclusion keeps the code that uses what
+it matches isn't listed.
+
+The list only holds for the mode that was run: an exclusion that's unnecessary in default mode can still be needed in
+transitive mode, for code that only unused code uses. It doesn't change the exit code.
+
+### Annotations that aren't needed
+
+Code annotated with `@unused`, or with `@nowarn` with a `msg` filter that mentions "unused" or "never used" (but not
+"unused value of type", which is about discarded values), is never reported. `findUnusedAll` also lists the annotations
+that aren't needed because what they're on is referenced anyway, e.g. a `@nowarn("msg=unused")` parameter that the
+method now reads. Being used only through what a definition overrides doesn't count, since the compiler can still warn
+about it then, so an annotation on an override's parameter is never listed, and neither is one on a class parameter, or
+on an `export` forwarder, which copies the annotation from what it forwards to. References from inside what's annotated,
+like a recursive call, don't count either, and neither do the ones find-unused infers for `transparent inline` methods
+and quoted types. Like the compiler, it counts references from code that's itself unused, so the list is the same in
+transitive mode.
+
+The compiler's `-Wunused:nowarn` lists the `@nowarn`s that suppress nothing, and keeping it on stops them from piling
+up. It doesn't warn about every class parameter find-unused reports, e.g. a `using` parameter that only proves
+something about its class's types, so give those `@unused` instead of `@nowarn`, which it would list. Check what it
+lists by recompiling after removing them, too: it can list a `@nowarn` on a class's `using` parameter that the compiler
+does warn about once it's gone; making such a parameter used removes the need for either.
+
+## Default values
+
+A parameter's default value is reported when no call ever uses it, because every caller passes that argument. It's
+listed as the method followed by the parameter's name, e.g. `com.example.Foo.bar(baz = ...)` for `baz` in
+`def bar(baz: Int = 1)`, or `com.example.Foo(baz = ...)` for a constructor parameter. Removing the default is safe:
+a call that relied on it fails to compile.
+
+Macros that read default values, like JSON decoders filling in missing fields, are taken into account through the
+bytecode. A library that reads them by reflection at runtime isn't, so exclude the defaults of the classes it handles,
+e.g. with `--exclusion 'sym=^com\.example\.models\..*\(\w+ = \.\.\.\)$'`. A default is also excluded along with its
+method, and annotating the parameter with `@unused` keeps its default too.
+
+## Auxiliary constructors
+
+An auxiliary constructor (`def this(...)`) that nothing calls is reported as its class's `<init>`, e.g.
+`com.example.Foo.<init>`, at the constructor's position, which tells overloads apart, and its default values as
+`com.example.Foo.<init>(bar = ...)`. A `sym` exclusion can't tell overloads apart, so `sym=Foo\.<init>$` excludes all of
+`Foo`'s auxiliary constructors. Constructors that are only called from Java, by reflection, or by a library macro's
+expansion, like the no-argument constructors some serialization and dependency injection frameworks need, need an
+exclusion, e.g. `--exclusion 'sym=\.<init>$'` for all of them.
+
+## Transitive mode
+
+By default, find-unused considers code used if anything references it, even code that's unused itself. So an unused
+object whose methods call each other, a recursive method that nothing else calls, or code that only unused code calls
+isn't reported. In transitive mode, a reference only counts if it comes from code that's used itself, starting from:
+
+- `main` methods, `@main` methods (Scala's and [mainargs](https://github.com/com-lihaoyi/mainargs)'s), and objects that inherit a `main` method, like `App` or cats-effect's `IOApp`
+- classes in test sources (`src/test/`)
+- excluded code (see [Exclusions](#exclusions)), and code annotated with `@unused` or `@nowarn("msg=unused")`
+
+A member that overrides something outside the analyzed code, like `toString`, is used when its class is. A member that
+implements or overrides analyzed code is used when its class is and the member it overrides is, so a class that
+implements a used trait but is never created is reported. References that are only in the bytecode, like derived
+instances using each other through `summonFrom`, are attributed to the code they come from too, so a chain of derived
+instances that's only used by unused code is reported in one run. Only the outermost unused definition is reported: if
+an object is unused, its members aren't listed separately.
+
+Enable it in the sbt plugin with `Global / findUnusedTransitive := true`, or pass `--transitive` to the CLI, and run it
+with `findUnusedAll` (or the CLI's `all` command): `findUnusedExplicits` and `findUnusedGivens` only see one kind of
+code, so they can't follow references that pass through the other kind, and refuse it. Code that's only reached in other
+ways, like reflection or a framework that instantiates classes from configuration, needs an exclusion.
+
 ## Known issues
 
-### `given`s/`implicit`s summoned with `inline`/macro methods
+### `given`s summoned with `inline`/macro methods
 
 As of Scala 3.10.0, the TASTy representation of some `inline` and macro-related methods does not include references to
 the `given`/`implicit` instances that they summon -- https://github.com/scala/scala3/issues/22701
@@ -126,12 +211,11 @@ This includes:
 1. `scala.compiletime.summonAll`
 2. `scala.compiletime.summonFrom`
 3. `scala.quoted.Expr.summon`
-4. Uses of `scala.compiletime.summonInline` in macros
+4. Uses of `scala.compiletime.summonInline` in macros and other `inline` methods
 
-The end result is that any instances that are _only_ resolved by these methods will be reported as unused.
-
-This is especially problematic for derivation, which often uses `summonFrom`. For example, with this code using
-[circe](https://github.com/circe/circe) derivation:
+These methods are expanded after the TASTy is written, so to work around this, find-unused also reads the bytecode of
+the analyzed packages and considers a `given`/`implicit` used if the bytecode references it. This covers derivation,
+which often uses `summonFrom`. For example, with this code using [circe](https://github.com/circe/circe) derivation:
 
 ```scala
 import io.circe.Decoder
@@ -140,30 +224,83 @@ case class Foo(int: Int) derives Decoder
 case class Bar(foo: Foo) derives Decoder
 ```
 
-`Foo`'s derived `Decoder` will be reported as unused because circe derivation uses `summonFrom`. The `Decoder` is
-required and used by `Bar`'s derived `Decoder`.
+`Foo`'s derived `Decoder` is used by `Bar`'s derived `Decoder`, which is only visible in the bytecode.
 
-### `transparent inline` methods
+The same goes for `object`s that macros refer to, like the `case object`s that
+[enumeratum](https://github.com/lloydmeta/enumeratum)'s `findValues` lists.
 
-As of Scala 3.10.0, the TASTy representation of calls to `transparent inline` methods is equivalent to the TASTy
-representation of the body of the `transparent inline` method -- there is no indication that the `transparent inline`
-method was called.
+A `given` declared inside a method body compiles to a local variable, which the bytecode can't tell apart from any
+other, so one that's only summoned by an `inline` method or macro is still reported as unused.
 
-For example:
+The bytecode doesn't help with `inline given`s, because they're expanded where they're summoned and leave no reference
+in the bytecode either, and find-unused can't tell which `inline given` a search found without reimplementing inlining.
+Instead, it considers an `inline given` used if its type class, or a class that type class extends, is summoned by an
+`inline` method or macro that the analyzed code calls, or by an `inline given` that's considered used, or is a type
+argument of a call to an `inline` method. So an `inline given` that's never summoned can still be reported, but an
+unused `inline given` of a type class that's summoned this way won't be:
+
+```scala
+import scala.compiletime.summonInline
+
+inline given Ordering[Foo] = Ordering.by(_.int)
+
+inline def sorted[A](as: List[A]): List[A] = as.sorted(using summonInline[Ordering[A]])
+
+// `sorted` summons an `Ordering`, so the `inline given` is considered used, whether or not it's what was summoned
+val foos = sorted(List(Foo(2), Foo(1)))
+```
+
+The walk can't follow a macro's call to an abstract method into its implementations, so a type class that's only
+summoned there isn't seen, and its `inline given`s can be reported even when they're used.
+
+#### Exact results for `inline given`s
+
+find-unused's compiler plugin records the `inline given`s that inlining expands, so it can tell exactly which ones are
+used instead. Enable it in the sbt plugin with:
+
+```scala
+Global / findUnusedCompilerPlugin := true
+```
+
+This adds the plugin to every Scala 3 project, which writes its records next to each class directory, adding
+`-find-unused` to its name. The records are only used when every class find-unused analyzes has one; otherwise
+find-unused says which class doesn't, and checks `inline given`s as described above. So after enabling the plugin,
+recompile everything, e.g. after a `clean`. That includes classes in the analyzed packages that come from a library jar,
+which has no records, so keep those packages to the code the build compiles. sbt 2 can also restore classes from its
+cache without running the compiler, which then doesn't write their records. A record next to a class directory that no
+longer has its class, e.g. because the class moved to another project, is ignored. Without the sbt plugin, compile with
+`-Xplugin:<path to find-unused-compiler-plugin_3.jar>`, optionally with `-P:find-unused:out:<dir>` to write somewhere
+else, and pass each directory to the CLI with `--inline-given-records`.
+
+### `transparent inline` methods that reduce to a constant
+
+As of Scala 3.10.0, the TASTy representation of a call to a `transparent inline` method is the method's expanded body --
+there is no reference to the method itself. For example, the TASTy for `val bar` here is simply `val bar = 1`:
 
 ```scala
 transparent inline def foo(): Int = 1
 val bar = foo()
 ```
 
-The TASTy representation for `val bar` does not include a reference to `transparent inline def foo`, it appears as if
-`val bar` is simply defined as
+To work around this, find-unused uses the source positions recorded in the expansion, which point to a tree in the
+definition of the `transparent inline` method it came from (or, for a macro, to its `${ ... }` splice). It also
+considers the classes and objects the method is in used, since the expansion doesn't have to refer to what the method
+was called on, unless the expansion is inside them.
+
+When a `transparent inline` method's body is a call to another one that reduces to a constant, the constant is
+positioned in the other one's definition, so the expansion of a call to `bar` here only points to `foo`:
 
 ```scala
-val bar = 1
+transparent inline def foo(x: Int): Int = x + 1
+transparent inline def bar(): Int = foo(41)
+transparent inline def baz(): Int = foo(1)
+val qux = bar()
 ```
 
-The end result is that `transparent inline def`s are reported as unused even when they are in fact used.
+find-unused considers every `transparent inline` method in the top-level class that defines `bar` whose body leads to
+`foo` this way used, so `baz` isn't reported either, and neither are `bar` and `baz` when only `foo` is called. And an
+object that's only used as the receiver of the `transparent inline` methods it inherits, like `object Foo extends Bar`,
+where `Bar` defines them, isn't referenced by their expansions, so it's reported as unused.
 
 ### Lack of support for multiple Scala versions
 

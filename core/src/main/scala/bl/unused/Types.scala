@@ -1,5 +1,6 @@
 package bl.unused
 
+import cats.syntax.either.*
 import cats.syntax.foldable.*
 import tastyquery.Contexts.*
 import tastyquery.Symbols.*
@@ -8,6 +9,11 @@ import tastyquery.Types.*
 object Types {
   def typeBoundsTypes(bounds: TypeBounds): List[Type] = List(bounds.low, bounds.high)
 
+  // Resolving a symbol can throw when tasty-query can't load the class it's in, e.g. because it fails to unpickle a
+  // default getter's name in a library's TASTy. A symbol that can't be resolved can't be reported on, so it's skipped
+  // rather than stopping the whole analysis.
+  private def resolved(symbol: => Option[Symbol]): Option[Symbol] = Either.catchNonFatal(symbol).toOption.flatten
+
   def symbols(tpe: Type)(using ctx: Context): Set[Symbol] = {
     // `seen` holds the types themselves rather than their hash codes, since types don't override `hashCode`
     @annotation.tailrec
@@ -15,12 +21,12 @@ object Types {
       types.filterNot(seen.contains) match {
         case Nil => acc
 
-        case (t: TypeRef) :: rest => go(acc ++ t.optSymbol, seen + t, rest)
+        case (t: TypeRef) :: rest => go(acc ++ resolved(t.optSymbol), seen + t, rest)
 
-        case (t: TermRef) :: rest => go(acc + t.symbol, seen + t, rest)
+        case (t: TermRef) :: rest => go(acc ++ resolved(Some(t.symbol)), seen + t, rest)
 
         // TODO - change to this? go(acc, t.underlying :: rest)
-        case (t: ThisType) :: rest => go(acc ++ t.tref.optSymbol, seen + t, rest)
+        case (t: ThisType) :: rest => go(acc ++ resolved(t.tref.optSymbol), seen + t, rest)
 
         case (t: AppliedType) :: rest =>
           go(
@@ -93,10 +99,10 @@ object Types {
     go(Set.empty, Set.empty, List(tpe))
   }
 
-  def references(tpe: Type)(using ctx: Context): EnvR[References] =
+  def references(tpe: Type)(using ctx: Context): EnvR[Refs] =
     symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
 
-  def prefixReferences(prefix: NonEmptyPrefix)(using ctx: Context): EnvR[References] =
+  def prefixReferences(prefix: NonEmptyPrefix)(using ctx: Context): EnvR[Refs] =
     prefix match {
       case t: Type => references(t)
       case _: PackageRef => References.empty

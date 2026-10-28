@@ -3,6 +3,7 @@ package bl.unused
 import cats.syntax.either.*
 import cats.syntax.foldable.*
 import cats.syntax.semigroup.*
+import scala.annotation.unused
 import tastyquery.Contexts.Context
 import tastyquery.Names.*
 import tastyquery.Trees.*
@@ -32,9 +33,16 @@ object Symbols {
 
   def isConstructor(sym: Symbol): Boolean = sym.name == nme.Constructor
 
+  /**
+   * Whether `sym` is a class's primary constructor, which is used whenever its class is. Auxiliary constructors
+   * (`def this(...)`) are reported like methods. Without a tree to tell them apart, every constructor counts as primary.
+   */
+  def isPrimaryConstructor(sym: Symbol): Boolean =
+    isConstructor(sym) && Option(sym.owner).collect { case c: ClassSymbol => c }.flatMap(_.tree).forall(_.rhs.constr.symbol == sym)
+
   def constructorParamToParamAccessors(ctorParam: Symbol)(using ctx: Context): Set[Symbol] =
     Option(ctorParam.owner)
-      .collect { case t: TermSymbol if Symbols.isConstructor(t) => t } // t is the class constructor
+      .collect { case t: TermSymbol if Symbols.isPrimaryConstructor(t) => t } // t is the class constructor
       .flatMap(t => Option(t.owner))
       .collect { case c: ClassSymbol => c } // c is the class
       .fold(Set())(c => c.getDecl(ctorParam.name).toSet ++ c.getMember(ctorParam.name).toSet) // getDecl/getMember find the param accessors
@@ -44,7 +52,7 @@ object Symbols {
       .collect { case t: TermSymbol if t.isParamAccessor => t }
       .flatMap(t => Option(t.owner))
       .collect { case c: ClassSymbol => c } // c is the parent class
-      .flatMap(_.declarations.find(Symbols.isConstructor))
+      .flatMap(_.declarations.find(Symbols.isPrimaryConstructor))
       .collect { case t: TermSymbol => t.tree } // t is the class constructor
       .flatten
       .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
@@ -53,11 +61,15 @@ object Symbols {
   def isDefaultParam(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isParamWithDefault }.getOrElse(false)
 
+  /** A method that computes a parameter's default value, e.g. `foo$default$2` for the second parameter of `foo` */
+  def isDefaultGetter(sym: Symbol): Boolean =
+    sym.name match {
+      case _: DefaultGetterName => true
+      case _ => false
+    }
+
   def isGiven(sym: Symbol): Boolean =
     Some(sym).collect { case t: TermSymbol => t.isGivenOrUsing || t.isImplicit }.getOrElse(false)
-
-  def isValidDefinition(sym: Symbol): Boolean =
-    !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isConstructor(sym) && !isDefaultParam(sym)
 
   def isInPackage(pkgSyms: Set[PackageSymbol])(sym: Symbol): Boolean =
     sym match {
@@ -72,10 +84,52 @@ object Symbols {
       case None => sym.displayFullName
     }).replace("$.", ".").stripSuffix("$")
 
+  /**
+   * The parameter whose default value a default getter computes, with its method, or its class for a constructor
+   * parameter
+   */
+  def defaultGetterParam(sym: Symbol)(using ctx: Context): Option[(TermOrTypeSymbol, TermSymbol)] =
+    (sym.name, Option(sym.owner)) match {
+      case (DefaultGetterName(method, index), Some(owner: ClassSymbol)) =>
+        // A constructor's default getters are in its class's companion
+        val methods: List[(TermOrTypeSymbol, TermSymbol)] =
+          if (method == nme.Constructor)
+            // A primary constructor's defaults belong to its class, and an auxiliary constructor's to itself
+            owner.companionClass.toList.flatMap(c => c.getAllOverloadedDecls(method).map(d => (if (isPrimaryConstructor(d)) c else d) -> d))
+          else owner.getAllOverloadedDecls(method).map(m => m -> m)
+        // Only one overload of a method can have default values
+        methods.iterator
+          .map((m, decl) => (m, decl.paramSymss.flatMap(_.left.toOption.toList.flatten).lift(index)))
+          .collectFirst { case (m, Some(p)) if p.isParamWithDefault => (m, p) }
+      case _ => None
+    }
+
+  /**
+   * Whether `sym` is a default getter that's reported: not the forwarder an `export` generates for one, which can't
+   * be removed on its own, not one of a local method, which has no name to report it under, and not one of a local
+   * class, whose JVM name the bytecode scan can't predict, so it couldn't see a macro reading it.
+   */
+  def isReportedDefaultGetter(sym: Symbol)(using ctx: Context): Boolean =
+    isDefaultGetter(sym) && !Some(sym).collect { case t: TermSymbol => t.isExport }.getOrElse(false) &&
+      defaultGetterParam(sym).nonEmpty && Bytecode.memberKey(sym).nonEmpty
+
+  /**
+   * The name a symbol is reported under. That's `name`, except for default getters: the default value of `bar` in
+   * `def foo(bar: Int = 1)` is `foo(bar = ...)`, and in `class Foo(bar: Int = 1)` it's `Foo(bar = ...)`.
+   */
+  def displayName(sym: Symbol)(using ctx: Context): String =
+    defaultGetterParam(sym).fold(name(sym))((method, param) => s"${name(method)}(${param.name} = ...)")
+
+  private val declarationsByNameCache = Memo[Symbol, Map[String, List[Symbol]]]()
+
+  // An owner's declarations by name, since this is looked up for every type member and export
+  private def declarationsByName(owner: Symbol, declarations: => List[Symbol]): Map[String, List[Symbol]] =
+    declarationsByNameCache(owner)(declarations.groupBy(_.name.toString))
+
   def allMatchingSymbols(sym: Symbol)(using ctx: Context): List[Symbol] =
     Option(sym.owner).fold(Nil) {
-      case c: ClassSymbol => c.declarations.filter(_.name.toString == sym.name.toString)
-      case p: PackageSymbol => p.declarations.filter(_.name.toString == sym.name.toString)
+      case c: ClassSymbol => declarationsByName(c, c.declarations).getOrElse(sym.name.toString, Nil)
+      case p: PackageSymbol => declarationsByName(p, p.declarations).getOrElse(sym.name.toString, Nil)
       // I don't think TermSymbols have children...?
       case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => Nil
     }.filterNot(_ == sym)
@@ -101,6 +155,8 @@ object Symbols {
     |""".stripMargin.replace("\n", s"\n$spaces")
   }
 
+  // Not called by the analysis, but useful to call while debugging it
+  @unused
   def debug(message: String, sym: Symbol, onlyIf: String => Boolean)(using ctx: Context): Unit =
     if (onlyIf(name(sym)))
       println(s"""
@@ -174,7 +230,11 @@ object Symbols {
   /**
    * Find all symbols matching the given `Ident`
    *
-   * tasty-query sometimes throws an error on `Ident#symbol`, in which case we fall back to looking at `Ident#referenceType`.
+   * tasty-query (1.10.0) throws on `Ident#symbol` when it can't match the signature the compiler pickled for a call to
+   * the method's: the compiler uses the method's signature as seen from the prefix, e.g. for an inherited generic method
+   * called from an `object` (twirl's `_display_` in a template) or a given inherited by a companion, leaves out `erased`
+   * parameters, and erases a `Unit` result reached through an opaque alias or a type parameter to `BoxedUnit`. In that
+   * case we fall back to looking at `Ident#referenceType`.
    * If that's a `TermRef`, we look at its `prefix` in an attempt to identify the `ClassSymbol` that owns the `Ident`.
    * If we find a `ClassSymbol`, we look in it and its parent classes for all symbols with the same name as the `Ident`.
    */
@@ -245,7 +305,9 @@ object Symbols {
   /**
    * Find all symbols matching the given `Select`
    *
-   * tasty-query sometimes throws an error on `Select#symbol`, in which case we fall back to two approaches:
+   * tasty-query throws on `Select#symbol` for the reasons `getFromIdent` lists, mostly when resolving the qualifier's type,
+   * for members of a match type it doesn't reduce, and when reducing a match type crashes, in which case we fall back to
+   * two approaches:
    *
    *   1. Checking `Select#selectOwner` -- see `getFromSelectOwner` above
    *   2. Checking if the `qualifier` of the `Select` is an `Apply -- see `getFromSelectApply` above
@@ -258,80 +320,51 @@ object Symbols {
       ).flatMap(f => Either.catchNonFatal(f(sel)).toOption.getOrElse(Set.empty))
     )
 
+  /** The symbols an `Ident` or `Select` refers to, or none for another tree or one that can't be resolved */
+  def fromTree(tree: Tree)(using ctx: Context): Set[Symbol] =
+    Either.catchNonFatal(tree match {
+      case i: Ident => getFromIdent(i)
+      case s: Select => getFromSelect(s)
+      case _ => Set.empty
+    }).getOrElse(Set.empty)
+
   /**
-   * Get the first symbol the given `TermOrTypeSymbol` overrides, if any
-   *
-   * tasty-query has a built-in `TermOrTypeSymbol#nextOverriddenSymbol` method, but it sometimes returns `None` unexpectedly
-   * We first try calling that, and then perform our fallback logic.
-   *
-   * If the given `sym` meets all of these criteria:
-   *
-   *   1. It belongs to a `ClassSymbol`
-   *   2. It is not a constructor method
-   *   3. It is not private
-   *   4. It is a method
-   *
-   * then we check the parent classes of the symbol's owner. For each one, we get method declarations with names
-   * matching the name of the symbol, and look for the first one where both of the following are true:
-   *
-   *   1. The method's parameter types match the parameter types of the method represented by `sym`
-   *   2. The method's result type matches the result type of the method represented by `sym`
-   *
-   * This logic is cobbled together from a handful of methods in tasty-query.
-   *
-   * TermOrTypeSymbol#nextOverriddenSymbol, which calls TermOrTypeSymbol#allOverriddenSymbols,
-   * which calls TermOrTypeSymbol#overriddenSymbol, which calls TermOrTypeSymbol#matchingDecl.
-   *
-   * For TermSymbols, matchingDecl performs a check against the parent class similar to what we do, but it uses
-   * `candidateType.matches(targetType)`, which returns `false` for some overridden methods.
-   *
-   * This is the ultimate problem we're working around. For some reason, both the parameter and result types match,
-   * but the overall type of the methods don't match.
+   * The first symbol `sym` overrides, if any. tasty-query's `nextOverriddenSymbol` misses some overrides, like ones whose
+   * parameter types are written with an `export`ed alias of a generic class, which `Type.matches` doesn't see through.
+   * So when it finds nothing, this looks for a non-private method of the same name in a parent class whose parameters
+   * erase to the same types as `sym`'s, both seen from `sym`'s class, which is how the compiler's signatures tell an
+   * override from an overload. A parameter whose erasure tasty-query can't tell matches any, and a method whose
+   * parameters can't be erased at all, e.g. because a type isn't on the classpath, matches none.
    */
-  def nextOverriddenSymbol(sym: TermOrTypeSymbol)(using ctx: Context): Option[TermOrTypeSymbol] = {
-    def listsMatch[A](l1: List[A], l2: List[A], cmp: (A, A) => Boolean): Boolean =
-      if (l1.length == l2.length) l1.zip(l2).forall(cmp.tupled)
-      else false
-
-    def typesMatch(t1: TypeOrMethodic, t2: TypeOrMethodic): Boolean =
-      (t1, t2) match {
-        case (m1: MethodType, m2: MethodType) =>
-          val paramsMatch = listsMatch(m1.paramTypes, m2.paramTypes, typesMatch)
-          val resultMatch = typesMatch(m1.resultType, m2.resultType)
-
-          paramsMatch && resultMatch
-
-        case (p1: PolyType, p2: PolyType) =>
-          val paramsMatch = listsMatch(p1.paramTypeBounds, p2.paramTypeBounds, _.isSameBounds(_))
-          val resultMatch = typesMatch(p1.resultType, p2.resultType)
-
-          paramsMatch && resultMatch
-
-        case _ => t1.matches(t2)
-      }
-
-    sym.nextOverriddenSymbol.orElse(
-      sym match {
-        case t: TermSymbol if t.owner.isClass && !isConstructor(t) && !t.isPrivate =>
-          val ownerClass = t.owner.asClass
-          val ownerType = ownerClass.thisType
-          val targetType = t.typeAsSeenFrom(ownerType)
-
-          ownerClass.linearization.drop(1).collectFirst(Function.unlift { parentClass =>
-            val candidates = parentClass.getAllOverloadedDecls(t.name).filterNot(_.isPrivate)
-
-            candidates.find { candidate =>
-              typesMatch(candidate.typeAsSeenFrom(ownerType), targetType)
-            }
+  def nextOverriddenSymbol(sym: TermOrTypeSymbol)(using ctx: Context): Option[TermOrTypeSymbol] =
+    sym.nextOverriddenSymbol.orElse(sym match {
+      case t: TermSymbol if t.owner.isClass && !isConstructor(t) && !t.isPrivate =>
+        val site = t.owner.asClass.thisType
+        def erasedParams(m: TermSymbol) = Either.catchNonFatal(m.erasedParamsAsSeenFrom(site)).toOption
+        // Only erased if there's a candidate, which most methods don't have
+        lazy val params = erasedParams(t)
+        t.owner.asClass.linearization.drop(1).iterator
+          .flatMap(_.getAllOverloadedDecls(t.name).filterNot(_.isPrivate))
+          .find(c => (params, erasedParams(c)) match {
+            case (Some(ps), Some(cs)) =>
+              ps.sizeCompare(cs) == 0 && ps.lazyZip(cs).forall((p, c) => p.isEmpty || c.isEmpty || p == c)
+            case _ => false
           })
+      case _ => None
+    })
 
-        case _ =>
-          None
-      }
-    )
-  }
+  /**
+   * Everything `sym` overrides. Following `nextOverriddenSymbol` only finds one member per class it reaches, so the
+   * members `sym` overrides in each of its class's parents are added too: `close()` in a class that extends both
+   * `AutoCloseable` and a trait declaring `close()` overrides both.
+   */
+  def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] =
+    allOverriddenSymbolsCache(sym)(computeAllOverriddenSymbols(sym))
 
-  def allOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
+  // Memoized, since it's asked for each method and once more for each of its parameters
+  private val allOverriddenSymbolsCache = Memo[TermOrTypeSymbol, List[TermOrTypeSymbol]]()
+
+  private def computeAllOverriddenSymbols(sym: TermOrTypeSymbol)(using ctx: Context): List[TermOrTypeSymbol] = {
     @annotation.tailrec
     def go(acc: List[TermOrTypeSymbol], overriddenSyms: List[Symbol], addHead: Boolean): List[TermOrTypeSymbol] =
       overriddenSyms match {
@@ -340,7 +373,12 @@ object Symbols {
         case _ :: rest => go(acc, rest, true)
       }
 
-    go(Nil, List(sym), false)
+    val inParents = sym match {
+      case t: TermSymbol if Option(t.owner).exists(_.isClass) && !isConstructor(t) && !t.isPrivate =>
+        Either.catchNonFatal(t.allOverriddenSymbols.toList).getOrElse(Nil)
+      case _ => Nil
+    }
+    (go(Nil, List(sym), false) ++ inParents).distinct
   }
 
   /**
@@ -365,44 +403,90 @@ object Symbols {
       )
     }
 
-  // Does the given Symbol or its owner have a DefaultGetterName as its name?
-  // It seems like `def`s with default params are duplicated as `DefDef`s with a `name` that's a `DefaultGetterParam`
-  private object DefaultParam {
-    private def isDefaultName(name: Name): Boolean =
-      name match {
-        case _: DefaultGetterName => true
+  // A wildcard (`_`) or tuple-destructuring parameter
+  private def isIgnoredParam(sym: Symbol): Boolean =
+    sym.name match {
+      case UniqueName(SimpleName(""), "_$" | "$", _) => true
+      case _ => false
+    }
+
+  // The class of a refinement type, like `{ def foo: Int }`
+  private def isRefinementClass(sym: Symbol): Boolean = sym.name == tpnme.RefinedClassMagic
+
+  private val mainName = termName("main")
+  private val testSource = "(^|/)src/test/".r
+
+  private val ordinalName = termName("ordinal")
+
+  /**
+   * The `ordinal` method the compiler adds to a sealed class's companion to make it the class's `Mirror.Sum`. It tests
+   * for each child, which doesn't make them used.
+   */
+  def isSumMirrorOrdinal(sym: Symbol)(using ctx: Context): Boolean =
+    sym.name == ordinalName && isSynthetic(sym) && (Option(sym.owner) match {
+      case Some(c: ClassSymbol) =>
+        c.isModuleClass && Either.catchNonFatal(c.linearization.exists(name(_) == "scala.deriving.Mirror.Sum")).getOrElse(false)
+      case _ => false
+    })
+
+  /** The class the compiler generates to run a `@main` method, whose `main` method is synthetic */
+  def isMainWrapper(sym: Symbol)(using ctx: Context): Boolean =
+    sym match {
+      case c: ClassSymbol => Either.catchNonFatal(c.getAllOverloadedDecls(mainName).exists(_.isSynthetic)).getOrElse(false)
+      case _ => false
+    }
+
+  private val mainAnnotationsCache = Memo[Context, List[ClassSymbol]]()
+
+  // The annotations that make a method a command-line entry point: Scala's `@main`, and mainargs's, which generates the
+  // code that calls the method in a macro expansion, so the call isn't in TASTy. Looked up once per run, since
+  // `isEntryPoint` asks for every method.
+  private def mainAnnotations(using ctx: Context): List[ClassSymbol] =
+    mainAnnotationsCache(ctx)(
+      List("scala.main", "mainargs.main").flatMap(n => Either.catchNonFatal(ctx.findTopLevelClass(n)).toOption)
+    )
+
+  private def isMainMethod(t: TermSymbol)(using ctx: Context): Boolean =
+    t.isMethod && (t.name == mainName || mainAnnotations.exists(t.hasAnnotation))
+
+  /**
+   * Definitions that are used without being referenced: test classes, `main` methods and their parameters, and objects
+   * that inherit one
+   */
+  def isEntryPoint(sym: Symbol)(using ctx: Context): Boolean =
+    sym match {
+      case c: ClassSymbol =>
+        // The source path recorded in TASTy, which doesn't include the directory the project is in
+        c.tree.exists(t => testSource.findFirstIn(t.pos.sourceFile.path).nonEmpty) ||
+          Either.catchNonFatal(c.linearization.drop(1).exists(_.getAllOverloadedDecls(mainName).nonEmpty)).getOrElse(false)
+      case t: TermSymbol =>
+        isMainMethod(t) || Option(t.owner).exists {
+          case m: TermSymbol => isMainMethod(m) && m.paramSymss.exists(_.merge.contains(t))
+          case _ => false
+        }
+      case _ => false
+    }
+
+  /**
+   * Whether `sym` is one of the definitions the analysis reports on. Not compiler-generated code, primary constructors
+   * (used whenever their class is), the class that runs a `@main` method, module vals (an `object` is reported as its
+   * class), wildcard parameters, the parameters of default getters (which repeat their method's), refinement classes and
+   * their members, or the default getters `isReportedDefaultGetter` leaves out.
+   */
+  def isDefinition(env: Env, sym: Symbol)(using ctx: Context): Boolean =
+    env.symbolIsValid(sym) && !isSynthetic(sym) && !isParamOfSyntheticMethod(sym) && !isPrimaryConstructor(sym) &&
+      !isMainWrapper(sym) && (!isDefaultGetter(sym) || isReportedDefaultGetter(sym)) && (sym match {
+        case t: TermSymbol => !t.isModuleVal && !isIgnoredParam(t) && !Option(t.owner).exists(isDefaultGetter)
+        case c: ClassSymbol => !isRefinementClass(c)
+        case t: TypeMemberSymbol => !Option(t.owner).exists(isRefinementClass)
         case _ => false
-      }
+      })
 
-    def unapply(sym: Symbol): Boolean =
-      isDefaultName(sym.name) || Option(sym.owner).fold(false)(s => isDefaultName(s.name))
-  }
-
-  private object IgnoredParam {
-    def unapply(sym: Symbol): Boolean =
-      sym match {
-        case t: TermSymbol =>
-          t.name match {
-            // Wildcard, i.e. `_`
-            case UniqueName(SimpleName(""), "_$", _) => true
-            // Tuple destructuring
-            case UniqueName(SimpleName(""), "$", _) => true
-            case _ => false
-          }
-        case _ => false
-      }
-  }
-
-  private object RefinementClass {
-    def unapply(sym: Symbol): Boolean = Some(sym).collect { case c: ClassSymbol => c.isRefinementClass }.getOrElse(false)
-  }
-
-  def references(sym: Symbol)(using ctx: Context): EnvR[References] =
-    EnvR.hasSeenSymbol(sym).flatMap(seen =>
+  def references(sym: Symbol)(using ctx: Context): EnvR[Refs] =
+    EnvR.markSeen(sym).flatMap(seen =>
       if (seen) References.empty
       else
         for {
-          _ <- EnvR.addSeenSymbol(sym)
           debug <- EnvR.debug
           res <- sym match {
             case s if syntheticMemberOfCaseClass(s).nonEmpty =>
@@ -414,17 +498,13 @@ object Symbols {
               if (debug) println(s"*********** TermSymbol (module val): ${name(t)}")
               References.empty
 
-            case t @ IgnoredParam() =>
+            case t: TermSymbol if isIgnoredParam(t) =>
               if (debug) println(s"*********** TermSymbol (ignored param): ${name(t)}")
               References.empty
 
             case t: TermSymbol =>
               if (debug) println(s"*********** TermSymbol: ${name(t)}")
-              // Don't count default params as definitions
-              (t match {
-                case DefaultParam() => References.empty
-                case _ => References.fromSymbol(t, References.defined)
-              }) |+|
+              References.fromSymbol(t, References.defined) |+|
                 References.usedProxy(getMethodAndOverridesFromParam(t).map((_, Set(t))).toMap) |+|
                 References.usedProxy(t, getSuperParamsFromParam(t)) |+|
                 References.usedProxy(constructorParamToParamAccessors(t).map((_, Set(t))).toMap)
@@ -435,18 +515,13 @@ object Symbols {
 
             case c: ClassSymbol =>
               if (debug) println(s"*********** ClassSymbol: ${name(c)}, decls: ${c.declarations}")
-              (c match {
-                case RefinementClass() => References.empty
-                case _ => References.fromSymbol(c, References.defined)
-              }) |+| c.tree.fold(References.empty)(Trees.references) |+| c.declarations.foldMap(references)
+              References.fromSymbol(c, References.defined) |+| c.tree.fold(References.empty)(Trees.references) |+|
+                Trees.within(c)(c.declarations.foldMap(references))
 
             case t: TypeMemberSymbol =>
               if (debug) println(s"*********** TypeMemberSymbol: ${name(t)}")
-              (Option(t.owner) match {
-                case Some(RefinementClass()) => References.empty
-                case _ => References.fromSymbol(t, References.defined)
-              }) |+|
-                (t.typeDef match {
+              References.fromSymbol(t, References.defined) |+|
+                Trees.within(t)(t.typeDef match {
                   case TypeMemberDefinition.TypeAlias(tpe) =>
                     Types.symbols(tpe).toList.foldMap(References.fromSymbol(_, References.used))
                   case TypeMemberDefinition.AbstractType(bounds) =>

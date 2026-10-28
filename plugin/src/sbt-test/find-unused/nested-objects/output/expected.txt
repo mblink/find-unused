@@ -1,0 +1,21 @@
+Found 8 unused terms
+
+┌─────────────────────────────────────────────┬────────────────────────────────────────────────┐
+│ Instance                                    │ Location                                       │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.Outer.UnusedInner                 │ b/src/main/scala/bl/unused/Objects.scala:5:10  │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.Outer.UnusedInner.y               │ b/src/main/scala/bl/unused/Objects.scala:5:28  │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.Outer.UnusedCase                  │ b/src/main/scala/bl/unused/Objects.scala:6:15  │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.Holder.UnusedInClass              │ b/src/main/scala/bl/unused/Objects.scala:12:10 │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.Objects$package.local.UnusedLocal │ b/src/main/scala/bl/unused/Objects.scala:17:10 │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.Shape.UnusedSquare                │ b/src/main/scala/bl/unused/Objects.scala:26:15 │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.Shape.UnusedPolygon               │ b/src/main/scala/bl/unused/Objects.scala:27:14 │
+├─────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ bl.unused.UnusedPlain                       │ b/src/main/scala/bl/unused/Objects.scala:32:13 │
+└─────────────────────────────────────────────┴────────────────────────────────────────────────┘

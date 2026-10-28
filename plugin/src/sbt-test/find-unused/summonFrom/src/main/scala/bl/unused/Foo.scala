@@ -6,3 +6,5 @@ case class Foo(int: Int) derives Decoder
 case class Bar(foo: Foo) derives Decoder
 
 val barDecoder = Decoder[Bar]
+
+case class Baz(int: Int) derives Decoder

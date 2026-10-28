@@ -1,0 +1,8 @@
+-> findUnusedAll
+$ must-mirror output/expected.txt output/actual.txt
+# Only `findUnusedAll` lists annotations that aren't needed
+-> findUnusedExplicits
+$ must-mirror output/expected-explicits.txt output/actual.txt
+> set Global / findUnusedTransitive := true
+-> findUnusedAll
+$ must-mirror output/expected-transitive.txt output/actual.txt

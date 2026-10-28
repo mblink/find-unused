@@ -56,6 +56,7 @@ ThisBuild / githubWorkflowBuildMatrixExclusions ++= scriptedScalaVersions.filter
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Run(List("sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} 'test; scripted'"), name = Some("scripted")),
+  WorkflowStep.Run(List("python3 .claude/skills/validate-on-project/test_scripts.py"), name = Some("Check skill scripts")),
   WorkflowStep.Run(
     List("sbt cli3/assembly"),
     name = Some("Build CLI"),
@@ -146,6 +147,7 @@ lazy val core = baseProj("core", "find-unused-core")
       else Seq("ch.epfl.scala" %% "tasty-query" % "1.10.0")
     ) ++ Seq(
       "com.lihaoyi" %% "pprint" % "0.9.6",
+      "org.ow2.asm" % "asm" % "9.11.1",
       "org.typelevel" %% "cats-core" % "2.13.0",
     ),
   )
@@ -170,7 +172,35 @@ lazy val cli = baseProj("cli", "find-unused-cli")
   .dependsOn(core)
   .aggregate(core)
 
+// The scripts the skills run with scala-cli, compiled here so a change to `core` that breaks them fails the build
+lazy val skills = sbt.internal.ProjectMatrix("skills", file(".claude/skills"))
+  .jvmPlatform(scalaVersions = Seq(scala3ForLib))
+  .settings(commonSettings)
+  .settings(
+    name := "find-unused-skills",
+    libraryDependencies += "org.ow2.asm" % "asm-util" % "9.11.1",
+    Compile / unmanagedSourceDirectories := Seq(),
+    Compile / unmanagedSources := Seq(
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "benchmark" / "Bench.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "CompareBytecode.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "ExclusionsPrelude.scala",
+    ),
+    // `ExclusionsPrelude.scala` expects the exclusions copied from a project's build
+    Compile / sourceGenerators += Def.task {
+      val file = (Compile / sourceManaged).value / "Exclusions.scala"
+      IO.write(file, "val exclusions: Seq[FindUnusedExclusion] = Seq(FindUnusedExclusion(sym = \"^x$\".r))\n")
+      Seq(file)
+    },
+  )
+  .dependsOn(core)
+
+// Compiled with the oldest Scala version find-unused supports, so it runs in each newer compiler
+lazy val compilerPlugin = baseProj("compiler-plugin", "find-unused-compiler-plugin", Seq(scala3ForSbt))
+  .settings(publishSettings)
+  .settings(libraryDependencies += "org.scala-lang" %% "scala3-compiler" % scalaVersion.value % Provided)
+
 lazy val cliClasspath = taskKey[Seq[File]]("CLI classpath")
+lazy val compilerPluginJar = taskKey[File]("Compiler plugin jar")
 
 def pluginSbtVersion(scalaBinaryVersion: String, sbt1Version: String): String =
   scalaBinaryVersion match {
@@ -197,7 +227,8 @@ lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3For
       else Seq()
     ),
     cliClasspath := (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(_.data),
-    buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath)),
+    compilerPluginJar := (compilerPlugin.jvm(scala3ForSbt) / Compile / packageBin).value,
+    buildInfoKeys := Seq[BuildInfoKey](version, BuildInfoKey(cliClasspath), BuildInfoKey(compilerPluginJar)),
     buildInfoPackage := "bl.unused",
   )
   .enablePlugins(SbtPlugin, BuildInfoPlugin)
