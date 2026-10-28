@@ -189,15 +189,15 @@ isn't reported. In transitive mode, a reference only counts if it comes from cod
 
 A member that overrides something outside the analyzed code, like `toString`, is used when its class is. A member that
 implements or overrides analyzed code is used when its class is and the member it overrides is, so a class that
-implements a used trait but is never created is reported. References
-that are only in the bytecode, like derived instances using each other through `summonFrom`, are attributed to the
-code they come from too, so a chain of derived instances that's only used by unused code is reported in one run. Only
-the outermost unused definition is reported: if an object is unused, its members aren't listed separately.
+implements a used trait but is never created is reported. References that are only in the bytecode, like derived
+instances using each other through `summonFrom`, are attributed to the code they come from too, so a chain of derived
+instances that's only used by unused code is reported in one run. Only the outermost unused definition is reported: if
+an object is unused, its members aren't listed separately.
 
 Enable it in the sbt plugin with `Global / findUnusedTransitive := true`, or pass `--transitive` to the CLI, and run it
 with `findUnusedAll` (or the CLI's `all` command): `findUnusedExplicits` and `findUnusedGivens` only see one kind of
-code, so they can't follow references that pass through the other kind, and refuse it. Code that's only reached in other ways, like
-reflection or a framework that instantiates classes from configuration, needs an exclusion.
+code, so they can't follow references that pass through the other kind, and refuse it. Code that's only reached in other
+ways, like reflection or a framework that instantiates classes from configuration, needs an exclusion.
 
 ## Known issues
 
@@ -298,9 +298,9 @@ val qux = bar()
 ```
 
 find-unused considers every `transparent inline` method in the top-level class that defines `bar` whose body leads to
-`foo` this way used, so `baz` isn't reported either, and neither are `bar` and `baz` when only `foo` is called. And an object that's only used as the receiver of the
-`transparent inline` methods it inherits, like `object Foo extends Bar`, where `Bar` defines them, isn't referenced by
-their expansions, so it's reported as unused.
+`foo` this way used, so `baz` isn't reported either, and neither are `bar` and `baz` when only `foo` is called. And an
+object that's only used as the receiver of the `transparent inline` methods it inherits, like `object Foo extends Bar`,
+where `Bar` defines them, isn't referenced by their expansions, so it's reported as unused.
 
 ### Lack of support for multiple Scala versions
 

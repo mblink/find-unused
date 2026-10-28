@@ -1,6 +1,5 @@
 package bl.unused
 
-import cats.syntax.either.*
 import cats.syntax.foldable.*
 import java.net.URI
 import java.nio.file.{Files, FileSystems, Path}
@@ -38,10 +37,7 @@ object FindUnused {
       // Waits for the scan the first time a `given`, a default value or an `object` is analyzed
       analyze(
         packages,
-        Either.catchNonFatal(bytecodeScan.get()).leftMap {
-          case e: ExecutionException => e.getCause
-          case e => e
-        }.valueOr(e => throw e),
+        try bytecodeScan.get() catch { case e: ExecutionException => throw e.getCause },
         debug,
         rootDirectory,
         inlineGivenRecords,

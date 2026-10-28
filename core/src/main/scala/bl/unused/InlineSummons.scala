@@ -80,15 +80,7 @@ object InlineSummons {
       }
 
     def addTypes(tree: Tree): Unit =
-      new TreeTraverser {
-        override def traverse(tree: Tree): Unit = {
-          tree match {
-            case t: TypeTree => Either.catchNonFatal(t.toType).foreach(found ++= classesOf(_))
-            case _ => ()
-          }
-          super.traverse(tree)
-        }
-      }.traverse(tree)
+      Trees.collect(tree) { case t: TypeTree => t }.foreach(t => Either.catchNonFatal(t.toType).foreach(found ++= classesOf(_)))
 
     def walk(body: Tree, inMacro: Boolean): Unit =
       new TreeTraverser {

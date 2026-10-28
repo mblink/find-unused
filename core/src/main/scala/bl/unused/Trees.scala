@@ -18,6 +18,18 @@ object Trees {
 
   def referencesL(trees: List[Tree])(using ctx: Context): EnvR[Refs] = trees.foldMap(references)
 
+  /** What `pf` returns for each tree in `tree`, including `tree` itself, where it's defined, outermost first */
+  def collect[A](tree: Tree)(pf: PartialFunction[Tree, A]): List[A] = {
+    val found = mutable.ListBuffer.empty[A]
+    new TreeTraverser {
+      override def traverse(t: Tree): Unit = {
+        pf.lift(t).foreach(found += _)
+        super.traverse(t)
+      }
+    }.traverse(tree)
+    found.toList
+  }
+
   /** Attributes the references found by `refs` to `sym`, if it's one of the definitions the analysis reports on */
   def within(sym: Symbol)(refs: EnvR[Refs])(using ctx: Context): EnvR[Refs] =
     refs.local(env => if (Symbols.isDefinition(env, sym)) env.copy(enclosing = sym :: env.enclosing) else env)
@@ -151,34 +163,19 @@ object Trees {
   // The `transparent inline` methods defined anywhere in a class's tree, including in the classes, objects and methods
   // in it. Without a tree, neither they nor their trees can be found.
   private def transparentInlineDefs(cls: ClassSymbol): List[TermSymbol] =
-    transparentInlineDefsCache(cls) {
-      val defs = mutable.ListBuffer.empty[TermSymbol]
-      cls.tree.foreach(new TreeTraverser {
-        override def traverse(tree: Tree): Unit = {
-          tree match {
-            case d: DefDef if d.symbol.isTransparentInline => defs += d.symbol
-            case _ => ()
-          }
-          super.traverse(tree)
-        }
-      }.traverse(_))
-      defs.toList
-    }
+    transparentInlineDefsCache(cls)(
+      cls.tree.toList.flatMap(collect(_) { case d: DefDef if d.symbol.isTransparentInline => d.symbol })
+    )
 
   private val definitionSpansCache = Memo[TermSymbol, Set[(Int, Int)]]()
 
+  private def span(pos: SourcePosition): (Int, Int) = (pos.startOffset, pos.endOffset)
+
   // The offsets of every tree in a method's definition
   private def definitionSpans(m: TermSymbol): Set[(Int, Int)] =
-    definitionSpansCache(m) {
-      val spans = mutable.Set.empty[(Int, Int)]
-      m.tree.foreach(new TreeTraverser {
-        override def traverse(tree: Tree): Unit = {
-          if (!tree.pos.isUnknown) spans += ((tree.pos.startOffset, tree.pos.endOffset))
-          super.traverse(tree)
-        }
-      }.traverse(_))
-      spans.toSet
-    }
+    definitionSpansCache(m)(
+      m.tree.toList.flatMap(collect(_) { case t if !t.pos.isUnknown => span(t.pos) }).toSet
+    )
 
   private val rootCallsCache = Memo[TermSymbol, List[TermSymbol]]()
 
@@ -207,7 +204,7 @@ object Trees {
    */
   private def constantChain(m: TermSymbol, pos: SourcePosition)(using ctx: Context): List[TermSymbol] = {
     // Only the offsets, since the source file recorded for the constant is the outermost method's
-    def matches(t: TermSymbol): Boolean = definitionSpans(t).contains((pos.startOffset, pos.endOffset))
+    def matches(t: TermSymbol): Boolean = definitionSpans(t).contains(span(pos))
 
     def go(t: TermSymbol, seen: Set[TermSymbol]): Option[List[TermSymbol]] =
       if (matches(t)) Some(List(t))
@@ -253,7 +250,7 @@ object Trees {
         .collect { case c: ClassSymbol if !pos.isUnknown && env.isInPackages(c) => c }
         .toList
         .flatMap(transparentInlineDefs)
-      val direct = defs.filter(definitionSpans(_).contains((pos.startOffset, pos.endOffset)))
+      val direct = defs.filter(definitionSpans(_).contains(span(pos)))
       val viaConstant = expr match {
         case _: Literal =>
           defs.flatMap(d => constantChain(d, pos) match {
@@ -308,9 +305,9 @@ object Trees {
         // An import at the top of a file isn't a use of anything, since what it imports is referenced where it's used,
         // but one in a definition is, e.g. an `inline` method can import `given`s for the code it expands to
         case Import(expr, selectors) =>
+          val refs = references(expr) |+| referencesL(selectors)
           EnvR.env.flatMap(env =>
-            if (env.enclosing.nonEmpty) references(expr) |+| referencesL(selectors)
-            else (references(expr) |+| referencesL(selectors)).map(r => Refs(References(importRefs = r.build.used)))
+            if (env.enclosing.nonEmpty) refs else refs.map(r => Refs(References(importRefs = r.build.used)))
           )
         case ImportIdent(_) => References.empty
         case ImportSelector(imported, renamed, bound) => references(imported) |+| referencesO(renamed) |+| referencesO(bound)

@@ -229,15 +229,14 @@ contain one.
 
 **tasty-query workarounds.** `Symbols.scala` contains several deliberate fallbacks, each documented in place:
 `getFromIdent`/`getFromSelect` catch throwing `.symbol` calls and re-resolve by name through the class linearization;
-`getSelectOwner` reads a private field by Java reflection; `nextOverriddenSymbol` falls back to matching an override
-by its parameters' erased types (its signature, as the compiler does) because tasty-query's version misses some cases,
-like parameters written with an `export`ed alias of a generic class; comparing the types themselves with `matches`
-accepts overloads, since it's true for any two value types. `signatureWithoutErasedParams` strips `erased` params so
-call sites match definitions. `core/src/main/scala/tastyquery/SymbolsOps.scala` lives in the `tastyquery` package
-specifically to reach package-private API (flags, signatures, a type's class).
-`.claude/skills/diagnose-false-positive/tasty-query.md` records what causes each workaround and the upstream fix that
-would remove it. Prefer adding a narrow, commented workaround
-in this style over changing the general traversal.
+`getSelectOwner` reads a private field by Java reflection; `nextOverriddenSymbol` falls back to matching an override by
+its parameters' erased types (its signature, as the compiler does) because tasty-query's version misses some cases, like
+parameters written with an `export`ed alias of a generic class; comparing the types themselves with `matches` accepts
+overloads, since it's true for any two value types. `signatureWithoutErasedParams` strips `erased` params so call sites
+match definitions. `core/src/main/scala/tastyquery/SymbolsOps.scala` lives in the `tastyquery` package specifically to
+reach package-private API (flags, signatures, a type's class). `.claude/skills/diagnose-false-positive/tasty-query.md`
+records what causes each workaround and the upstream fix that would remove it. Prefer adding a narrow, commented
+workaround in this style over changing the general traversal.
 
 ## Plugin architecture
 

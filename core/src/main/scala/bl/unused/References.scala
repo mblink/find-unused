@@ -111,7 +111,7 @@ case class References(
     def resolve(cls: String, method: Option[String], depth: Int): Set[Sym] = {
       val fromMethod = method.filterNot(m => m == "<init>" || m == "<clinit>").fold(Set.empty[Sym]) { m =>
         // A private member's expanded name, `bl$Foo$$$bar`, ends with its real name
-        val unexpanded = Option(m.lastIndexOf("$$$")).filter(_ >= 0).map(i => m.drop(i + 3))
+        val unexpanded = Some(m.lastIndexOf("$$$")).filter(_ >= 0).map(i => m.drop(i + 3))
         (candidates(m) ++ unexpanded.toList.flatMap(candidates)).iterator
           .map(n => jvmMembers.getOrElse((cls, n), Set.empty))
           .find(_.nonEmpty)
@@ -266,6 +266,19 @@ object References {
 
   def leaf(refs: References): EnvR[Refs] = Refs(refs).pure[EnvR]
 
+  // Whether `sym` is a parameter (a constructor's too, though its enclosing definition is the class), a field a parameter
+  // declares, or a definition local to a method, which `References.ownerIndependent` explains
+  private def isOwnerIndependent(env: Env, sym: Symbol): Boolean = {
+    val inMethod = (env.enclosing.headOption ++ Option(sym.owner)).exists {
+      case m: TermSymbol => m.isMethod
+      case _ => false
+    }
+    inMethod || (sym match {
+      case t: TermSymbol => t.isParamAccessor
+      case _ => false
+    })
+  }
+
   // A definition, if it's one the analysis reports on (`Symbols.isDefinition`)
   def defined(sym: Symbol)(using ctx: Context): EnvR[Refs] =
     EnvR.env.flatMap(env =>
@@ -301,11 +314,7 @@ object References {
         jvmMembers = Some(sym).collect { case t: TermSymbol => t }.flatMap(Bytecode.memberKey).map(_ -> Set(defSym)).toMap,
         jvmClasses = Some(sym).collect { case c: ClassSymbol => c }.flatMap(Bytecode.internalClassName).map(_ -> defSym).toMap,
         owners = owner.map(defSym -> _).toMap,
-        // A parameter's owner is its method, even a constructor's, whose class is the parameter's enclosing definition
-        ownerIndependent = Option.when(
-          (env.enclosing.headOption ++ Option(sym.owner)).exists { case m: TermSymbol => m.isMethod; case _ => false } ||
-            Some(sym).collect { case t: TermSymbol => t.isParamAccessor }.getOrElse(false)
-        )(defSym).toSet,
+        ownerIndependent = Option.when(isOwnerIndependent(env, sym))(defSym).toSet,
         inlineGivens = Some(sym).collect { case t: TermSymbol if t.isInline && Symbols.isGiven(t) => defSym -> t }.toMap,
         defaultValueOf = defaultOf.map(defSym -> _).toMap,
         entryPoints = Option.when(Symbols.isEntryPoint(sym))(defSym).toSet,
