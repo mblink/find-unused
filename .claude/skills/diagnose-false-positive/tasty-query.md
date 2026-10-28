@@ -38,6 +38,13 @@ only (`ClassSymbol.getDecl`/`findMember`), and the compiler pickles something el
   field selections, HList `Drop[L, 2]`). The first two are small fixes, along with the compiler's rule that `Nothing` is
   disjoint from everything; the last needs pattern-matching rules tasty-query doesn't have.
 
+- **Loading a class can throw while unpickling its trees.** Resolving a type in coursier's `Fetch$` (reached from the sbt
+  plugin's code) throws `ClassCastException: DefaultGetterName cannot be cast to SignedName` from
+  `TreeUnpickler.readSignedName`, i.e. a term whose name is a default getter's is read as if it were signed. It's raised
+  from whatever call first loads the class, e.g. `TypeRef.optSymbol` or `TermRef.symbol`, and aborted the whole run.
+  `Types.symbols` and `Symbols.fromTree` now skip a symbol that can't be resolved. Not reproduced in isolation, so it
+  has no scripted test; the cause is only known from the trace.
+
 With the first three fixed, `getFromIdent`'s fallback never fired on either codebase; `getFromSelect`'s fallbacks are
 still needed for the match types that don't reduce.
 
