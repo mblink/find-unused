@@ -1,0 +1,44 @@
+# sbt-github-actions can't generate a `concurrency` setting, so this cancels the CI runs a newer commit on the same
+# branch or pull request supersedes. Tag runs are never cancelled, since they build the release.
+name: Cancel superseded runs
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    name: Cancel superseded runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel runs of Continuous Integration for older commits
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # This commit's own run takes a moment to appear
+          for _ in 1 2 3 4 5 6; do
+            runs=$(gh run list --workflow ci.yml --branch "$BRANCH" --limit 50 --json databaseId,headSha,status,createdAt)
+            # Only runs created before this commit's own run, so a late-starting older job can't cancel a newer run
+            mine=$(echo "$runs" | jq -r --arg sha "$SHA" '[.[] | select(.headSha == $sha) | .createdAt] | min // empty')
+            [ -n "$mine" ] && break
+            sleep 5
+          done
+          if [ -z "$mine" ]; then
+            echo "No Continuous Integration run for $SHA, nothing to cancel"
+            exit 0
+          fi
+          echo "$runs" | jq -r --arg sha "$SHA" --arg mine "$mine" \
+            '.[] | select(.headSha != $sha and .createdAt < $mine and (.status == "queued" or .status == "in_progress")) | .databaseId' |
+            while read -r id; do
+              echo "Cancelling run $id"
+              gh run cancel "$id"
+            done

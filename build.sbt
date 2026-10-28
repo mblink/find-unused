@@ -16,7 +16,7 @@ ThisBuild / scalaVersion := scala3ForLib
 
 val java25 = JavaSpec.temurin("25")
 val java17 = JavaSpec.temurin("17")
-val javaVersions = Seq(java17, java25)
+val javaVersions = List(java17, java25)
 
 val isTag = "startsWith(github.ref, 'refs/tags/v')"
 
@@ -44,18 +44,15 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq()
 
 def isJava(v: Int) = s"matrix.java == '${javaVersions.find(_.version == v.toString).get.render}'"
 def isScala(v: String) = s"matrix.scala == '$v'"
-def isScriptedScala(v: String) = s"matrix.scriptedScala == '$v'"
 
-val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && " ++ isScriptedScala(scala3ForLib) ++ " && github.event_name == 'push'"
+val shouldBuildCLI = isJava(25) ++ " && " ++ isScala(scala3ForLib) ++ " && github.event_name == 'push'"
 
-ThisBuild / githubWorkflowBuildMatrixAdditions += "scriptedScala" -> scriptedScalaVersions
-// Only test every scripted Scala version on the newest JDK; the oldest JDK just checks the latest Scala version
-ThisBuild / githubWorkflowBuildMatrixExclusions ++= scriptedScalaVersions.filterNot(_ == scala3ForLib).map(v =>
-  MatrixExclude(Map("java" -> java17.render, "scriptedScala" -> v))
-)
+// The scripted tests are split across this many runners, each running every `scriptedShards`th test
+val scriptedShards = 2
+val scriptedShardNames = (0 until scriptedShards).map(_.toString).toList
 
 ThisBuild / githubWorkflowBuild := Seq(
-  WorkflowStep.Run(List("sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} 'test; scripted'"), name = Some("scripted")),
+  WorkflowStep.Run(List("sbt test"), name = Some("Compile")),
   WorkflowStep.Run(List("python3 .claude/skills/validate-on-project/test_scripts.py"), name = Some("Check skill scripts")),
   WorkflowStep.Run(
     List("sbt cli3/assembly"),
@@ -91,13 +88,39 @@ ThisBuild / githubWorkflowBuild := Seq(
 )
 
 ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
+  id = "scripted",
+  name = "Scripted tests",
+  oses = List("ubuntu-latest"),
+  javas = javaVersions,
+  scalas = List(scala3ForLib),
+  matrixFailFast = Some(false),
+  matrixAdds = Map("scriptedScala" -> scriptedScalaVersions, "shard" -> scriptedShardNames),
+  // Only test every scripted Scala version on the newest JDK; the oldest JDK just checks the latest Scala version
+  matrixExcs = scriptedScalaVersions.filterNot(_ == scala3ForLib).map(v =>
+    MatrixExclude(Map("java" -> java17.render, "scriptedScala" -> v))
+  ),
+  steps = List(WorkflowStep.CheckoutFull) ++ WorkflowStep.SetupJava(javaVersions) ++ List(
+    WorkflowStep.SetupSbt(),
+    WorkflowStep.Run(
+      List(
+        "tests=$(ls plugin/src/sbt-test/find-unused | sort | awk -v shard=${{ matrix.shard }} -v shards=" ++ scriptedShards.toString ++
+          " '(NR - 1) % shards == shard' | sed 's#^#find-unused/#' | tr '\\n' ' ')",
+        "echo \"Running: $tests\"",
+        "sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} \"scripted $tests\"",
+      ),
+      name = Some("scripted"),
+    ),
+  ),
+)
+
+ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   id = "release",
   name = "Release",
   oses = List("ubuntu-latest"),
   javas = List(java25),
   scalas = List(scala3ForLib),
   cond = Some(isTag ++ " && github.event_name == 'push'"),
-  needs = List("build"),
+  needs = List("build", "scripted"),
   steps = List(
     WorkflowStep.CheckoutFull,
     WorkflowStep.Use(
