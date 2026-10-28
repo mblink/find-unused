@@ -1,6 +1,5 @@
 # Find Unused
 
-[![CI](https://github.com/mblink/find-unused/actions/workflows/ci.yml/badge.svg)](https://github.com/mblink/find-unused/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/mblink/find-unused)](https://github.com/mblink/find-unused/releases/latest)
 [![License](https://img.shields.io/github/license/mblink/find-unused)](LICENSE)
 
