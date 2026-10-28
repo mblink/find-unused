@@ -93,6 +93,7 @@ nothing calls a public member. It also finds `given`s that are only needed by co
     - [Exact results for `inline given`s](#exact-results-for-inline-givens)
   - [`transparent inline` methods that reduce to a constant](#transparent-inline-methods-that-reduce-to-a-constant)
   - [Lack of support for multiple Scala versions](#lack-of-support-for-multiple-scala-versions)
+- [Using it with an AI assistant](#using-it-with-an-ai-assistant)
 - [Debugging](#debugging)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -401,6 +402,13 @@ At the moment this tool only works when all projects in your build use the same 
 between Scala 3.8.x and 3.10.x.
 
 Support may be added in the future for multiple Scala versions within the same build or for older Scala 3 versions.
+
+## Using it with an AI assistant
+
+[`skills/find-unused/SKILL.md`](skills/find-unused/SKILL.md) is a skill that teaches Claude Code (and other agents
+that read `SKILL.md` files) how to install find-unused in a project, run it, decide whether a finding is really dead
+code, and delete it safely. Copy the `skills/find-unused` directory into your project's `.claude/skills/` or your
+personal `~/.claude/skills/`.
 
 ## Debugging
 
