@@ -18,7 +18,7 @@ sbt findUnusedAll
 
 It fails when it finds anything. To capture the table, set `Global / findUnusedOutputFile := Some(file(...))` in a
 local, uncommitted `.sbt` file named to sort after `build.sbt` (e.g. `zz-local.sbt`) so it overrides the build's
-setting. `table2tsv.py` (in this folder) turns the table into `name<TAB>location` lines. With an output file
+setting. `table2tsv.sh` (in this folder) turns the table into `name<TAB>location` lines. With an output file
 set, find-unused's `[find-unused] ...` progress lines are lost, so leave it unset when you need them.
 
 Exclusions live in `findUnusedExclusions`. Only exclude what's genuinely unused in Scala but must stay: generated
@@ -65,7 +65,7 @@ also keeps the objects and classes around what it matches.
 
 To remove a derived instance, drop just that type class from the `derives` clause (and the whole clause if it was the
 only one). A finding like `Foo.bar(baz = ...)` is a default value no call uses: remove just the ` = ...`
-(`remove_defaults.py` does this in bulk). Macros that read defaults show up in the bytecode, so
+Macros that read defaults show up in the bytecode, so
 find-unused doesn't report those.
 
 ## Unused on purpose

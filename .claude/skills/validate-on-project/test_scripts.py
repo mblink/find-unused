@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks `classpath.py`, `remove_defaults.py`, `table2tsv.py` and `pr-stack/resolve_conflicts.py` on small inputs. CI runs
+"""Checks `classpath.py`, `remove_defaults.py`, `table2tsv.sh` and `pr-stack/resolve_conflicts.py` on small inputs. CI runs
 it; run it after changing them."""
 import os
 import subprocess
@@ -11,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 def run(script, *args, cwd):
     return subprocess.run(
-        [sys.executable, os.path.join(HERE, script), *args], cwd=cwd, capture_output=True, text=True, check=True
+        [*(["bash"] if script.endswith(".sh") else [sys.executable]), os.path.join(HERE, script), *args], cwd=cwd, capture_output=True, text=True, check=True
     ).stdout
 
 
@@ -71,7 +71,7 @@ FINDINGS = [
 with tempfile.TemporaryDirectory() as d:
     with open(os.path.join(d, "all.txt"), "w", encoding="utf-8") as f:
         f.write(TABLE)
-    check("table2tsv.py", run("table2tsv.py", "all.txt", cwd=d), "ex.Foo.bar(baz = ...)\tFoo.scala:2:15\nex.Foo.unused\tFoo.scala:4:7\n")
+    check("table2tsv.sh", run("table2tsv.sh", "all.txt", cwd=d), "ex.Foo.bar(baz = ...)\tFoo.scala:2:15\nex.Foo.unused\tFoo.scala:4:7\n")
 
     # Windows line endings must survive the rewrite
     with open(os.path.join(d, "Foo.scala"), "w", encoding="utf-8", newline="") as f:
@@ -138,8 +138,8 @@ with tempfile.TemporaryDirectory() as d:
     with open(path, encoding="utf-8") as f:
         check("resolve_conflicts.py with diff3 markers", f.read(), "x\n")
 
-# `remove-unused-code` bundles copies of these so users can copy that one folder into their own project
-for name in ("CompareBytecode.scala", "table2tsv.py", "remove_defaults.py"):
+# `remove-unused-code` bundles a copy of these so users can copy that one folder into their own project
+for name in ("CompareBytecode.scala", "table2tsv.sh"):
     with open(os.path.join(HERE, name), "rb") as a, open(os.path.join(HERE, "..", "remove-unused-code", name), "rb") as b:
         check(f"remove-unused-code/{name} matches validate-on-project/{name}", b.read() == a.read(), True)
 

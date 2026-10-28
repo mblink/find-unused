@@ -53,7 +53,7 @@ validates givens and explicits together, so it reports different things than `fi
 `findUnusedExplicits` run separately. Convert the rendered table:
 
 ```bash
-python3 .claude/skills/validate-on-project/table2tsv.py all.txt > all.tsv   # name<TAB>location, one per line
+.claude/skills/validate-on-project/table2tsv.sh all.txt > all.tsv   # name<TAB>location, one per line
 ```
 
 ## 2. Replay the project's exclusions
@@ -137,7 +137,7 @@ default that only unused code relies on is reported too. Every caller already pa
 the default getters (`bar$default$2`, `$lessinit$greater$default$1`) and their trait forwarders in implementing
 classes should disappear.
 
-`test_scripts.py` checks `classpath.py`, `remove_defaults.py`, `table2tsv.py` and `pr-stack`'s `resolve_conflicts.py` on
+`test_scripts.py` checks `classpath.py`, `remove_defaults.py`, `table2tsv.sh` and `pr-stack`'s `resolve_conflicts.py` on
 small inputs, and CI runs it; add a case to it when fixing one. `sbt test` compiles the Scala scripts here and in
 `benchmark` against `core` (the `skills3` project), with a stub for the `exclusions` that `ExclusionsPrelude.scala`
 expects.
