@@ -52,9 +52,9 @@ object FindUnused {
     final def analyze(
       packages: Seq[String],
       bytecode: => BytecodeReferences,
-      debug: Boolean = false,
-      rootDirectory: Option[Path] = None,
-      inlineGivenRecords: Seq[Path] = Nil,
+      debug: Boolean,
+      rootDirectory: Option[Path],
+      inlineGivenRecords: Seq[Path],
     )(using ctx: Context): References = {
       lazy val bytecodeRefs = bytecode
       val pkgSyms = packages.map(ctx.findPackage).toSet

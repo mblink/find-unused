@@ -57,9 +57,6 @@ object Symbols {
       .collect { case d: DefDef => d.paramLists.flatMap(_.fold(identity, _ => Nil)) } // d is the constructor tree
       .flatMap(_.collectFirst { case v if v.name == paramAccessor.name => v.symbol }) // v is a constructor param
 
-  def isDefaultParam(sym: Symbol): Boolean =
-    Some(sym).collect { case t: TermSymbol => t.isParamWithDefault }.getOrElse(false)
-
   /** A method that computes a parameter's default value, e.g. `foo$default$2` for the second parameter of `foo` */
   def isDefaultGetter(sym: Symbol): Boolean =
     sym.name match {
@@ -132,37 +129,6 @@ object Symbols {
       // I don't think TermSymbols have children...?
       case _: (TermSymbol | ClassTypeParamSymbol | LocalTypeParamSymbol | TypeMemberSymbol) => Nil
     }.filterNot(_ == sym)
-
-  def debugDetails(message: String, sym: Symbol, indent: Int)(using ctx: Context): String = {
-    val spaces = " " * indent
-    val termSym = Some(sym).collect { case t: TermSymbol => t }
-    s"""
-    |$message -- ${sym.getClass} ${name(sym)}
-    |  class: ${sym.getClass}
-    |  toString: $sym
-    |  name: ${name(sym)}
-    |  raw name: ${sym.name}
-    |  raw name pprint: ${Debug.printer(sym.name)}
-    |  id: ${Sym.id(sym)}
-    |  isExport: ${termSym.fold(false)(_.isExport)}
-    |  isSynthetic: ${isSynthetic(sym)}
-    |  isConstructor: ${isConstructor(sym)}
-    |  isDefaultParam: ${isDefaultParam(sym)}
-    |  isGiven: ${isGiven(sym)}
-    |  isParamAccessor: ${termSym.fold(false)(_.isParamAccessor)}
-    |  nextOverriddenSymbol: ${termSym.flatMap(nextOverriddenSymbol).fold("None")(s => "\n" ++ debugDetails("nextOverriddenSymbol", s, indent + 2))}
-    |""".stripMargin.replace("\n", s"\n$spaces")
-  }
-
-  def debug(message: String, sym: Symbol, onlyIf: String => Boolean)(using ctx: Context): Unit =
-    if (onlyIf(name(sym)))
-      println(s"""
-        |********************************** $message
-        |${debugDetails("sym", sym, 0)}
-        |${debugDetails("owner", sym.owner, 2)}
-        |${allMatchingSymbols(sym).map(debugDetails("matchingSym", _, 0)).mkString("\n")}
-        |**********************************
-        |""".stripMargin)
 
   def withStaticOwners(sym: Symbol): Set[Symbol] = {
     @annotation.tailrec
@@ -433,14 +399,18 @@ object Symbols {
       case _ => false
     }
 
-  private val mainAnnotationCache = Memo[Context, Option[ClassSymbol]]()
+  private val mainAnnotationsCache = Memo[Context, List[ClassSymbol]]()
 
-  // Looked up once per run, since `isEntryPoint` asks for every method
-  private def mainAnnotation(using ctx: Context): Option[ClassSymbol] =
-    mainAnnotationCache(ctx)(Either.catchNonFatal(ctx.findTopLevelClass("scala.main")).toOption)
+  // The annotations that make a method a command-line entry point: Scala's `@main`, and mainargs's, which generates the
+  // code that calls the method in a macro expansion, so the call isn't in TASTy. Looked up once per run, since
+  // `isEntryPoint` asks for every method.
+  private def mainAnnotations(using ctx: Context): List[ClassSymbol] =
+    mainAnnotationsCache(ctx)(
+      List("scala.main", "mainargs.main").flatMap(n => Either.catchNonFatal(ctx.findTopLevelClass(n)).toOption)
+    )
 
   private def isMainMethod(t: TermSymbol)(using ctx: Context): Boolean =
-    t.isMethod && (t.name == mainName || mainAnnotation.exists(t.hasAnnotation))
+    t.isMethod && (t.name == mainName || mainAnnotations.exists(t.hasAnnotation))
 
   /**
    * Definitions that are used without being referenced: test classes, `main` methods and their parameters, and objects

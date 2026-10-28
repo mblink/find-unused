@@ -33,8 +33,9 @@ def time[A](f: => A): (A, Double) = {
   given Context = ctx
 
   // The first analysis also warms the JIT, so compare the counts, not these two timings
-  val (without, withoutMs) = time(FindUnused.givens.analyze(packages, BytecodeReferences(Map.empty, Map.empty, Map.empty)))
-  val (withBytecode, withMs) = time(FindUnused.givens.analyze(packages, bytecodeRefs))
+  def analyze(bytecode: BytecodeReferences) = FindUnused.givens.analyze(packages, bytecode, debug = false, None, Nil)
+  val (without, withoutMs) = time(analyze(BytecodeReferences(Map.empty, Map.empty, Map.empty)))
+  val (withBytecode, withMs) = time(analyze(bytecodeRefs))
   println(f"givens analysis without bytecode: $withoutMs%.0f ms, unused=${without.computeUnused.size}")
   println(f"givens analysis with bytecode (scan excluded): $withMs%.0f ms, unused=${withBytecode.computeUnused.size}")
 

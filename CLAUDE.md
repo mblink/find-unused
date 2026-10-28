@@ -105,13 +105,14 @@ display name, formatted position) with a global memo cache.
 `References.used` records a reference in `usedFrom` under the innermost one, or in `used` when there's none;
 `References.root` is for symbols that are used no matter what references them (annotations), and
 `attributeBytecodeCallers` and `markPossiblySummonedInlineGivens` add their roots to `used` directly. `computeUnused`
-counts every reference, as the tool always has. `computeTransitivelyUnused` (`--transitive`, meant for the `all`
-runner, since the others only see one kind of code) marks from roots instead: `used`, `entryPoints` (classes in
-`src/test/` by their TASTy source path, `main` and `@main` methods, objects inheriting `main`), exclusions, then
-follows `usedFrom`, `usedProxy`, `owners` (a used definition's enclosing definition is used, except for
-`ownerIndependent` ones: parameters, the fields they declare, and definitions local to a method), `externalOverrides`
-(used when their owner is) and `internalOverrides` (used when their owner and something they override are both used,
-so an implementation in a class that's never instantiated doesn't keep the class alive).
+counts every reference, as the tool always has. `computeTransitivelyUnused` (`--transitive`, meant for the `all` runner,
+since the others only see one kind of code) marks from roots instead: `used`, `entryPoints` (classes in `src/test/` by
+their TASTy source path, `main` methods and ones annotated `@main` or mainargs's `@main`, whose macro-generated callers
+TASTy doesn't show, objects inheriting `main`), exclusions, then follows `usedFrom`, `usedProxy`, `owners` (a used
+definition's enclosing definition is used, except for `ownerIndependent` ones: parameters, the fields they declare, and
+definitions local to a method), `externalOverrides` (used when their owner is) and `internalOverrides` (used when their
+owner and something they override are both used, so an implementation in a class that's never instantiated doesn't keep
+the class alive).
 `Symbols.allOverriddenSymbols` returns what a member overrides in every parent, not just the first match. It ignores
 `importRefs` (imports outside any definition; one inside a definition, e.g. an `inline` method importing `given`s for
 its expansion, is an ordinary reference), and only returns the outermost unused definitions.

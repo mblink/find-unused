@@ -183,7 +183,7 @@ By default, find-unused considers code used if anything references it, even code
 object whose methods call each other, a recursive method that nothing else calls, or code that only unused code calls
 isn't reported. In transitive mode, a reference only counts if it comes from code that's used itself, starting from:
 
-- `main` methods, `@main` methods, and objects that inherit a `main` method, like `App` or cats-effect's `IOApp`
+- `main` methods, `@main` methods (Scala's and [mainargs](https://github.com/com-lihaoyi/mainargs)'s), and objects that inherit a `main` method, like `App` or cats-effect's `IOApp`
 - classes in test sources (`src/test/`)
 - excluded code (see [Exclusions](#exclusions)), and code annotated with `@unused` or `@nowarn("msg=unused")`
 
