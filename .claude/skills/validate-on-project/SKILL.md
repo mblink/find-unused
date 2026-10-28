@@ -130,14 +130,14 @@ Never delete on find-unused's word alone. For each finding:
 Removing code can leave unused imports, which `-Werror` builds reject; clean those up and recompile.
 
 A default value reported as unused (`Foo.bar(baz = ...)`, located at the parameter) is removed by deleting just its `
-= ...`; `python3 .claude/skills/validate-on-project/remove_defaults.py all.tsv` prints each removal, and `--apply` makes
+= ...`; `scala-cli run .claude/skills/validate-on-project/RemoveDefaults.scala -- all.tsv` prints each removal, and `--apply` makes
 them once you've reviewed the list. Use the output of a run with the project's exclusions and without `--transitive`:
 without the exclusions it would strip defaults they keep on purpose, e.g. ones a macro reads, and in transitive mode, a
 default that only unused code relies on is reported too. Every caller already passes the argument, so the compile and bytecode checks above apply unchanged: only
 the default getters (`bar$default$2`, `$lessinit$greater$default$1`) and their trait forwarders in implementing
 classes should disappear.
 
-`test_scripts.py` checks `classpath.py`, `remove_defaults.py`, `table2tsv.sh` and `pr-stack`'s `resolve_conflicts.py` on
+`test_scripts.py` checks `classpath.py`, `table2tsv.sh` and `pr-stack`'s `resolve_conflicts.py` on
 small inputs, and CI runs it; add a case to it when fixing one. `sbt test` compiles the Scala scripts here and in
 `benchmark` against `core` (the `skills3` project), with a stub for the `exclusions` that `ExclusionsPrelude.scala`
 expects.

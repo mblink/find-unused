@@ -207,6 +207,7 @@ lazy val skills = sbt.internal.ProjectMatrix("skills", file(".claude/skills"))
       (ThisBuild / baseDirectory).value / ".claude" / "skills" / "benchmark" / "Bench.scala",
       (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "CompareBytecode.scala",
       (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "ExclusionsPrelude.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "RemoveDefaults.scala",
     ),
     // `ExclusionsPrelude.scala` expects the exclusions copied from a project's build
     Compile / sourceGenerators += Def.task {

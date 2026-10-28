@@ -65,7 +65,8 @@ also keeps the objects and classes around what it matches.
 
 To remove a derived instance, drop just that type class from the `derives` clause (and the whole clause if it was the
 only one). A finding like `Foo.bar(baz = ...)` is a default value no call uses: remove just the ` = ...`
-part of the parameter. A call that relied on the default fails to compile. Macros that read defaults show up in the
+part of the parameter (`scala-cli run RemoveDefaults.scala -- all.tsv` in this folder prints each removal, and
+`--apply` makes them; use a run without `--transitive`). A call that relied on the default fails to compile. Macros that read defaults show up in the
 bytecode, so find-unused doesn't report those.
 
 ## Unused on purpose
