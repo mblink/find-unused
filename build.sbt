@@ -53,7 +53,8 @@ val scriptedShardNames = (0 until scriptedShards).map(_.toString).toList
 
 ThisBuild / githubWorkflowBuild := Seq(
   WorkflowStep.Run(List("sbt test"), name = Some("Compile")),
-  WorkflowStep.Run(List("python3 .claude/skills/validate-on-project/test_scripts.py"), name = Some("Check skill scripts")),
+  WorkflowStep.Use(ref = UseRef.Public("VirtusLab", "scala-cli-setup", "v1"), name = Some("Setup scala-cli")),
+  WorkflowStep.Run(List("bash .claude/skills/validate-on-project/test_scripts.sh"), name = Some("Check skill scripts")),
   WorkflowStep.Run(
     List("sbt cli3/assembly"),
     name = Some("Build CLI"),
@@ -201,13 +202,17 @@ lazy val skills = sbt.internal.ProjectMatrix("skills", file(".claude/skills"))
   .settings(commonSettings)
   .settings(
     name := "find-unused-skills",
-    libraryDependencies += "org.ow2.asm" % "asm-util" % "9.11.1",
+    libraryDependencies ++= Seq("org.ow2.asm" % "asm-util" % "9.11.1", "com.lihaoyi" %% "ujson" % "4.4.3"),
     Compile / unmanagedSourceDirectories := Seq(),
     Compile / unmanagedSources := Seq(
       (ThisBuild / baseDirectory).value / ".claude" / "skills" / "benchmark" / "Bench.scala",
       (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "CompareBytecode.scala",
       (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "ExclusionsPrelude.scala",
       (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "RemoveDefaults.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "validate-on-project" / "Classpath.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "benchmark" / "SummarizeJfr.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "pr-stack" / "BlameLayers.scala",
+      (ThisBuild / baseDirectory).value / ".claude" / "skills" / "pr-stack" / "ResolveConflicts.scala",
     ),
     // `ExclusionsPrelude.scala` expects the exclusions copied from a project's build
     Compile / sourceGenerators += Def.task {

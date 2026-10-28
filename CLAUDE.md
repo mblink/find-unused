@@ -37,7 +37,7 @@ sbt compiler-plugin3/package              # builds the compiler plugin jar into 
 sbt githubWorkflowGenerate                # regenerate .github/workflows/ after editing build.sbt
 ```
 
-CI runs `sbt 'test; scripted'` and `python3 .claude/skills/validate-on-project/test_scripts.py`, so those are the full
+CI runs `sbt 'test; scripted'` and `bash .claude/skills/validate-on-project/test_scripts.sh` (which needs scala-cli), so those are the full
 local check. CI also runs scripted against older Scala
 versions (`scriptedScalaVersions` in `build.sbt`); reproduce one locally with
 `sbt -Dscripted.scala.version=3.8.4 'plugin3/scripted find-unused/<name>'`.

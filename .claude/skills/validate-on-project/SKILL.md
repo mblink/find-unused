@@ -78,7 +78,7 @@ analyses at once with 8 GB each (set `JOBS` and `HEAP` to change that). Build ea
 copy `cli/target/jvm-3/find-unused-cli-assembly-*.jar` away before switching commits. Its inputs are files in one
 directory:
 
-- `classpath.txt`, from `classpath.py <build root>` (sbt 1 or 2, after the project's tests are compiled), adding
+- `classpath.txt`, from `scala-cli run Classpath.scala -- <build root>` (sbt 1 or 2, after the project's tests are compiled), adding
   `--scala <version>` if it says the build has output for more than one Scala version
 - `packages.txt`, with `findUnusedPackages`
 - `exclusions.txt`, from the replay script's `--args`
@@ -137,8 +137,8 @@ default that only unused code relies on is reported too. Every caller already pa
 the default getters (`bar$default$2`, `$lessinit$greater$default$1`) and their trait forwarders in implementing
 classes should disappear.
 
-`test_scripts.py` checks `classpath.py`, `table2tsv.sh` and `pr-stack`'s `resolve_conflicts.py` on
-small inputs, and CI runs it; add a case to it when fixing one. `sbt test` compiles the Scala scripts here and in
+`test_scripts.sh` checks the scripts here and in `benchmark` and `pr-stack` on small inputs (it needs scala-cli and
+git), and CI runs it; add a case to it when fixing one. `sbt test` compiles the Scala scripts here and in
 `benchmark` against `core` (the `skills3` project), with a stub for the `exclusions` that `ExclusionsPrelude.scala`
 expects.
 

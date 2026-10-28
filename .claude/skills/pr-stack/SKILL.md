@@ -13,7 +13,7 @@ keeps showing the code as it will be merged rather than code a later PR rewrites
 ## 1. Decide where each change goes
 
 - **Map changed lines to PRs.** Write the stack's branches bottom up, one per line, starting with `main`, to a file, and
-  run `blame_layers.py <layers file> <top branch> <branch with the change>`. For each hunk it shows which PRs last
+  run `scala-cli run BlameLayers.scala -- <layers file> <top branch> <branch with the change>`. For each hunk it shows which PRs last
   touched the lines it replaces.
 - **Fold a change into the PR whose code it changes,** or where the duplication it removes first appears. For example,
   a helper that replaces two copies belongs in the PR that adds the second copy. A change that's a consequence of one
@@ -32,7 +32,7 @@ keeps showing the code as it will be merged rather than code a later PR rewrites
 3. **Rebuild every PR above as one commit.** For each, run
    `apply_layer.sh orig/<branch below> orig/<branch> rs/<branch below> rs/<branch>`, which 3-way applies the PR's
    whole diff onto the new base and lists conflicts.
-   - Resolve them with an editor or `resolve_conflicts.py <file> <resolutions.json>`.
+   - Resolve them with an editor or `scala-cli run ResolveConflicts.scala -- <file> <resolutions.json>`.
    - Make the PR's own new code match the style the folds introduced.
    - Make the docs (CLAUDE.md, README, skills) at that layer describe that layer's code.
    - Run `sbt test`, which compiles everything with `-Werror`, so an import a fold made unused fails here.

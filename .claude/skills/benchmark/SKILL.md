@@ -25,7 +25,7 @@ sbt "core3/compile; export core3/Runtime/fullClasspath" 2>&1 | grep -v '^\[' | t
   Avoid cats as a full-analysis corpus: tasty-query throws `InvalidProgramStructureException` on it, independent of
   find-unused, though the bytecode scan alone works.
 - A real sbt project that's already compiled: sbt exports each project's `Test / fullClasspath`, and the
-  `validate-on-project` skill's `classpath.py <build root>` writes their union, for sbt 1 or 2. Only combine projects
+  `validate-on-project` skill's `scala-cli run Classpath.scala -- <build root>` writes their union, for sbt 1 or 2. Only combine projects
   compiled with the same Scala version, since mixing versions puts two copies of each class on the classpath. Reading another repo's build output is read-only, but don't run sbt in someone else's
   working tree to produce it.
 
@@ -64,7 +64,7 @@ Flight Recorder, using the `jfr` tool from the same JDK:
 ```bash
 java -XX:StartFlightRecording=filename=run.jfr,settings=profile -cp "$cli_cp" bl.unused.FindUnusedCli all ...
 jfr print --events jdk.ExecutionSample --stack-depth 64 run.jfr > samples.txt
-python3 summarize_jfr.py samples.txt
+scala-cli run SummarizeJfr.scala -- samples.txt
 ```
 
 A find-unused method with a large inclusive share is the place to look; one that searches a whole collection for each
