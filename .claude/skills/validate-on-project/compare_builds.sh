@@ -3,7 +3,7 @@
 #
 # Runs two builds of the CLI (each `sbt cli3/assembly`, copied out of `cli/target/jvm-3/`) on an already compiled
 # project and diffs their output in each mode, exiting 1 if any differ. <inputs dir> holds:
-#   classpath.txt   the project's classpath, one entry per line (`classpath.py`)
+#   classpath.txt   the project's classpath, one entry per line (`Classpath.scala`)
 #   packages.txt    the packages to analyze, one per line
 #   exclusions.txt  optional: one `--exclusion` argument per line (the exclusions replay script's `--args`)
 #   records.txt     optional: the compiler plugin's record directories, one per line

@@ -63,8 +63,11 @@ jobs:
       - name: Compile
         run: sbt test
 
+      - name: Setup scala-cli
+        uses: VirtusLab/scala-cli-setup@v1
+
       - name: Check skill scripts
-        run: python3 .claude/skills/validate-on-project/test_scripts.py
+        run: bash .claude/skills/validate-on-project/test_scripts.sh
 
       - name: Build CLI
         if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && github.event_name == 'push'

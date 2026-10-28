@@ -39,6 +39,16 @@ sbt findUnusedAll
 
 Without sbt, download `find-unused.jar` from the release and see [Standalone CLI](#standalone-cli-1).
 
+## Claude Code skill for removing what it reports
+
+[`.claude/skills/remove-unused-code`](.claude/skills/remove-unused-code/SKILL.md) is a [Claude Code](https://claude.com/claude-code) skill that walks through deleting what find-unused reports without changing behavior: proving each finding is really unused, comparing the compiled bytecode before and after to catch a removed `given` that changed implicit resolution, and choosing between deleting, annotating and excluding. The folder is self-contained (it bundles the scala-cli bytecode comparison and a bash helper and a scala-cli script that strips unused default values), so copy it into your project's `.claude/skills/` (or `~/.claude/skills/` for all projects):
+
+```
+npx degit mblink/find-unused/.claude/skills/remove-unused-code .claude/skills/remove-unused-code
+```
+
+or `git clone --depth 1 https://github.com/mblink/find-unused` and copy the folder. It needs [scala-cli](https://scala-cli.virtuslab.org).
+
 ## Example output
 
 ```

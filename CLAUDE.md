@@ -37,7 +37,7 @@ sbt compiler-plugin3/package              # builds the compiler plugin jar into 
 sbt githubWorkflowGenerate                # regenerate .github/workflows/ after editing build.sbt
 ```
 
-CI runs `sbt 'test; scripted'` and `python3 .claude/skills/validate-on-project/test_scripts.py`, so those are the full
+CI runs `sbt 'test; scripted'` and `bash .claude/skills/validate-on-project/test_scripts.sh` (which needs scala-cli), so those are the full
 local check. CI also runs scripted against older Scala
 versions (`scriptedScalaVersions` in `build.sbt`); reproduce one locally with
 `sbt -Dscripted.scala.version=3.8.4 'plugin3/scripted find-unused/<name>'`.
@@ -65,7 +65,7 @@ Each one is a miniature sbt build containing real Scala sources with known unuse
   `scripted-test` skill shows how to capture it when output changes legitimately.
 
 To check a change against a real codebase, or before deleting code find-unused reports, follow the
-`validate-on-project` skill. To change a PR that others are stacked on, follow the `pr-stack` skill.
+`validate-on-project` skill; to delete what find-unused reports in a project that uses it, follow `remove-unused-code`. To change a PR that others are stacked on, follow the `pr-stack` skill.
 
 Adding a case for a new TASTy pattern means adding a directory here, not a unit test. `scalaVersion` comes from
 `sys.props("scala.version")` and the plugin version from `sys.props("plugin.version")`, both injected by
