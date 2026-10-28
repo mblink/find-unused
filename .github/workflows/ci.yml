@@ -31,7 +31,78 @@ jobs:
         os: [ubuntu-latest]
         scala: [3.10.0]
         java: [temurin@17, temurin@25]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout current branch (full)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java (temurin@17)
+        if: matrix.java == 'temurin@17'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: sbt
+
+      - name: Setup Java (temurin@25)
+        if: matrix.java == 'temurin@25'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: sbt
+
+      - name: Setup sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Check that workflows are up to date
+        run: sbt '++ ${{ matrix.scala }}; githubWorkflowCheck'
+
+      - name: Compile
+        run: sbt test
+
+      - name: Check skill scripts
+        run: python3 .claude/skills/validate-on-project/test_scripts.py
+
+      - name: Build CLI
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && github.event_name == 'push'
+        env:
+          FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME: ${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+        run: sbt cli3/assembly
+
+      - name: Copy CLI
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && github.event_name == 'push'
+        run: |
+          mkdir -p cli/artifacts/
+          cp cli/target/jvm-3/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+
+      - name: Attest CLI
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && github.event_name == 'push'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+
+      - name: Upload CLI
+        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
+          path: cli/artifacts/
+          if-no-files-found: error
+          retention-days: 2
+
+  scripted:
+    name: Scripted tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        scala: [3.10.0]
+        java: [temurin@17, temurin@25]
         scriptedScala: [3.8.4, 3.9.0, 3.10.0]
+        shard: [0, 1, 2, 3, 4, 5]
         exclude:
           - java: temurin@17
             scriptedScala: 3.8.4
@@ -63,45 +134,15 @@ jobs:
       - name: Setup sbt
         uses: sbt/setup-sbt@v1
 
-      - name: Check that workflows are up to date
-        run: sbt '++ ${{ matrix.scala }}; githubWorkflowCheck'
-
       - name: scripted
-        run: sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} 'test; scripted'
-
-      - name: Check skill scripts
-        run: python3 .claude/skills/validate-on-project/test_scripts.py
-
-      - name: Build CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && matrix.scriptedScala == '3.10.0' && github.event_name == 'push'
-        env:
-          FIND_UNUSED_CLI_ASSEMBLY_JAR_NAME: ${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-        run: sbt cli3/assembly
-
-      - name: Copy CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && matrix.scriptedScala == '3.10.0' && github.event_name == 'push'
         run: |
-          mkdir -p cli/artifacts/
-          cp cli/target/jvm-3/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }} cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-
-      - name: Attest CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && matrix.scriptedScala == '3.10.0' && github.event_name == 'push'
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: cli/artifacts/${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-
-      - name: Upload CLI
-        if: matrix.java == 'temurin@25' && matrix.scala == '3.10.0' && matrix.scriptedScala == '3.10.0' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ format('find-unused-{0}.jar', startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha) }}
-          path: cli/artifacts/
-          if-no-files-found: error
-          retention-days: 2
+          tests=$(ls plugin/src/sbt-test/find-unused | sort | awk -v shard=${{ matrix.shard }} -v shards=6 '(NR - 1) % shards == shard' | sed 's#^#find-unused/#' | tr '\n' ' ')
+          echo "Running: $tests"
+          sbt -Dscripted.scala.version=${{ matrix.scriptedScala }} "scripted $tests"
 
   release:
     name: Release
-    needs: [build]
+    needs: [build, scripted]
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     strategy:
       matrix:
