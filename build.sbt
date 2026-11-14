@@ -8,7 +8,7 @@ lazy val tastyQueryDev = sys.env.get("TASTY_QUERY_DEVELOPMENT").exists(_ == "1")
 
 lazy val scala2 = "2.12.21"
 lazy val scala3ForLib = "3.10.0"
-lazy val scala3ForSbt = "3.8.4"
+lazy val scala3ForSbt = "3.10.1"
 lazy val scriptedScalaVersions = List("3.8.4", "3.9.0", scala3ForLib)
 lazy val scriptedScalaVersion = sys.props.getOrElse("scripted.scala.version", scala3ForLib)
 
