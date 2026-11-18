@@ -246,7 +246,7 @@ lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3For
       "io.get-coursier" %% "coursier" % (if (scalaBinaryVersion.value == "3") "2.1.26" else "2.1.24"),
     ) ++ (
       // scaladoc resolves the `@data` annotation that coursier's Scala 3 TASTy references; coursier doesn't depend on it
-      if (scalaBinaryVersion.value == "3") Seq("io.github.alexarchambault" %% "data-class" % "0.2.11" % Provided)
+      if (scalaBinaryVersion.value == "3") Seq("io.github.alexarchambault" %% "data-class" % "0.3.1" % Provided)
       else Seq()
     ),
     cliClasspath := (cli.jvm(scala3ForLib) / Runtime / fullClasspath).value.map(_.data),
