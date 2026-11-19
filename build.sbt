@@ -242,8 +242,8 @@ lazy val plugin = baseProj("plugin", "find-unused-plugin", Seq(scala2, scala3For
     scriptedLaunchOpts ++= Seq(s"-Dplugin.version=${version.value}", s"-Dscala.version=$scriptedScalaVersion"),
     scriptedSbt := pluginSbtVersion(scalaBinaryVersion.value, sbtVersion.value),
     libraryDependencies ++= Seq(
-      // coursier publishes Scala 3 from 2.1.26 and Scala 2.12 only up to 2.1.24
-      "io.get-coursier" %% "coursier" % (if (scalaBinaryVersion.value == "3") "2.1.26" else "2.1.24"),
+      // coursier publishes Scala 3 from 2.1.27 and Scala 2.12 only up to 2.1.24
+      "io.get-coursier" %% "coursier" % (if (scalaBinaryVersion.value == "3") "2.1.27" else "2.1.24"),
     ) ++ (
       // scaladoc resolves the `@data` annotation that coursier's Scala 3 TASTy references; coursier doesn't depend on it
       if (scalaBinaryVersion.value == "3") Seq("io.github.alexarchambault" %% "data-class" % "0.2.11" % Provided)
